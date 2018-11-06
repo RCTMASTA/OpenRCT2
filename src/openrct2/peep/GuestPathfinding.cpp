@@ -52,14 +52,14 @@ enum
     PATH_SEARCH_FAILED
 };
 
-static rct_tile_element* get_banner_on_path(rct_tile_element* path_element)
+static TileElement* get_banner_on_path(TileElement* path_element)
 {
     // This is an improved version of original.
     // That only checked for one fence in the way.
     if (path_element->IsLastForTile())
         return nullptr;
 
-    rct_tile_element* bannerElement = path_element + 1;
+    TileElement* bannerElement = path_element + 1;
     do
     {
         // Path on top, so no banners
@@ -77,11 +77,11 @@ static rct_tile_element* get_banner_on_path(rct_tile_element* path_element)
     return nullptr;
 }
 
-static int32_t banner_clear_path_edges(rct_tile_element* tileElement, int32_t edges)
+static int32_t banner_clear_path_edges(TileElement* tileElement, int32_t edges)
 {
     if (_peepPathFindIsStaff)
         return edges;
-    rct_tile_element* bannerElement = get_banner_on_path(tileElement);
+    TileElement* bannerElement = get_banner_on_path(tileElement);
     if (bannerElement != nullptr)
     {
         do
@@ -95,9 +95,9 @@ static int32_t banner_clear_path_edges(rct_tile_element* tileElement, int32_t ed
 /**
  * Gets the connected edges of a path that are permitted (i.e. no 'no entry' signs)
  */
-static int32_t path_get_permitted_edges(rct_tile_element* tileElement)
+static int32_t path_get_permitted_edges(TileElement* tileElement)
 {
-    return banner_clear_path_edges(tileElement, tileElement->properties.path.edges) & 0x0F;
+    return banner_clear_path_edges(tileElement, tileElement->AsPath()->GetEdgesAndCorners()) & 0x0F;
 }
 
 /**
@@ -222,13 +222,13 @@ static int32_t guest_surface_path_finding(rct_peep* peep)
  * Returns the type of the next footpath tile a peep can get to from x,y,z /
  * inputTileElement in the given direction.
  */
-static uint8_t footpath_element_next_in_direction(TileCoordsXYZ loc, rct_tile_element* tileElement, uint8_t chosenDirection)
+static uint8_t footpath_element_next_in_direction(TileCoordsXYZ loc, TileElement* tileElement, uint8_t chosenDirection)
 {
-    rct_tile_element* nextTileElement;
+    TileElement* nextTileElement;
 
     if (tileElement->AsPath()->IsSloped())
     {
-        if (footpath_element_get_slope_direction(tileElement) == chosenDirection)
+        if (tileElement->AsPath()->GetSlopeDirection() == chosenDirection)
         {
             loc.z += 2;
         }
@@ -247,7 +247,7 @@ static uint8_t footpath_element_next_in_direction(TileCoordsXYZ loc, rct_tile_el
         if (nextTileElement->AsPath()->IsWide())
             return PATH_SEARCH_WIDE;
         // Only queue tiles that are connected to a ride are returned as ride queues.
-        if (nextTileElement->AsPath()->IsQueue() && nextTileElement->properties.path.ride_index != 0xFF)
+        if (nextTileElement->AsPath()->IsQueue() && nextTileElement->AsPath()->GetRideIndex() != 0xFF)
             return PATH_SEARCH_RIDE_QUEUE;
 
         return PATH_SEARCH_OTHER;
@@ -275,10 +275,10 @@ static uint8_t footpath_element_next_in_direction(TileCoordsXYZ loc, rct_tile_el
  * This is the recursive portion of footpath_element_destination_in_direction().
  */
 static uint8_t footpath_element_dest_in_dir(
-    TileCoordsXYZ loc, [[maybe_unused]] rct_tile_element* inputTileElement, uint8_t chosenDirection, uint8_t* outRideIndex,
+    TileCoordsXYZ loc, [[maybe_unused]] TileElement* inputTileElement, uint8_t chosenDirection, uint8_t* outRideIndex,
     int32_t level)
 {
-    rct_tile_element* tileElement;
+    TileElement* tileElement;
     int32_t direction;
 
     if (level > 25)
@@ -356,7 +356,7 @@ static uint8_t footpath_element_dest_in_dir(
 
                     if (tileElement->AsPath()->IsSloped())
                     {
-                        if (footpath_element_get_slope_direction(tileElement) == direction)
+                        if (tileElement->AsPath()->GetSlopeDirection() == direction)
                         {
                             loc.z += 2;
                         }
@@ -394,11 +394,11 @@ static uint8_t footpath_element_dest_in_dir(
  * width path, for example that leads from a ride exit back to the main path.
  */
 static uint8_t footpath_element_destination_in_direction(
-    TileCoordsXYZ loc, rct_tile_element* inputTileElement, uint8_t chosenDirection, uint8_t* outRideIndex)
+    TileCoordsXYZ loc, TileElement* inputTileElement, uint8_t chosenDirection, uint8_t* outRideIndex)
 {
     if (inputTileElement->AsPath()->IsSloped())
     {
-        if (footpath_element_get_slope_direction(inputTileElement) == chosenDirection)
+        if (inputTileElement->AsPath()->GetSlopeDirection() == chosenDirection)
         {
             loc.z += 2;
         }
@@ -473,9 +473,9 @@ static uint8_t peep_pathfind_get_max_number_junctions(rct_peep* peep)
  * since entrances and ride queues coming off a path should not result in
  * the path being considered a junction.
  */
-static bool path_is_thin_junction(rct_tile_element* path, TileCoordsXYZ loc)
+static bool path_is_thin_junction(TileElement* path, TileCoordsXYZ loc)
 {
-    uint8_t edges = footpath_get_edges(path);
+    uint8_t edges = path->AsPath()->GetEdges();
 
     int32_t test_edge = bitscanforward(edges);
     if (test_edge == -1)
@@ -582,9 +582,9 @@ static bool path_is_thin_junction(rct_tile_element* path, TileCoordsXYZ loc)
  *  rct2: 0x0069A997
  */
 static void peep_pathfind_heuristic_search(
-    TileCoordsXYZ loc, rct_peep* peep, rct_tile_element* currentTileElement, bool inPatrolArea, uint8_t counter,
-    uint16_t* endScore, int32_t test_edge, uint8_t* endJunctions, TileCoordsXYZ junctionList[16], uint8_t directionList[16],
-    TileCoordsXYZ* endXYZ, uint8_t* endSteps)
+    TileCoordsXYZ loc, rct_peep* peep, TileElement* currentTileElement, bool inPatrolArea, uint8_t counter, uint16_t* endScore,
+    int32_t test_edge, uint8_t* endJunctions, TileCoordsXYZ junctionList[16], uint8_t directionList[16], TileCoordsXYZ* endXYZ,
+    uint8_t* endSteps)
 {
     uint8_t searchResult = PATH_SEARCH_FAILED;
 
@@ -633,7 +633,7 @@ static void peep_pathfind_heuristic_search(
 
     /* Get the next map element of interest in the direction of test_edge. */
     bool found = false;
-    rct_tile_element* tileElement = map_get_first_element_at(loc.x, loc.y);
+    TileElement* tileElement = map_get_first_element_at(loc.x, loc.y);
     if (tileElement == nullptr)
     {
         return;
@@ -738,7 +738,7 @@ static void peep_pathfind_heuristic_search(
 
                 searchResult = PATH_SEARCH_THIN;
 
-                uint8_t numEdges = bitcount(footpath_get_edges(tileElement));
+                uint8_t numEdges = bitcount(tileElement->AsPath()->GetEdges());
 
                 if (numEdges < 2)
                 {
@@ -751,14 +751,14 @@ static void peep_pathfind_heuristic_search(
                 else
                 { // numEdges == 2
                     if (tileElement->AsPath()->IsQueue()
-                        && tileElement->properties.path.ride_index != gPeepPathFindQueueRideIndex)
+                        && tileElement->AsPath()->GetRideIndex() != gPeepPathFindQueueRideIndex)
                     {
-                        if (gPeepPathFindIgnoreForeignQueues && (tileElement->properties.path.ride_index != 0xFF))
+                        if (gPeepPathFindIgnoreForeignQueues && (tileElement->AsPath()->GetRideIndex() != 0xFF))
                         {
                             // Path is a queue we aren't interested in
                             /* The rideIndex will be useful for
                              * adding transport rides later. */
-                            rideIndex = tileElement->properties.path.ride_index;
+                            rideIndex = tileElement->AsPath()->GetRideIndex();
                             searchResult = PATH_SEARCH_RIDE_QUEUE;
                         }
                     }
@@ -1087,7 +1087,7 @@ static void peep_pathfind_heuristic_search(
             uint8_t savedNumJunctions = _peepPathFindNumJunctions;
 
             uint8_t height = loc.z;
-            if (tileElement->AsPath()->IsSloped() && footpath_element_get_slope_direction(tileElement) == next_test_edge)
+            if (tileElement->AsPath()->IsSloped() && tileElement->AsPath()->GetSlopeDirection() == next_test_edge)
             {
                 height += 2;
             }
@@ -1184,7 +1184,7 @@ int32_t peep_pathfind_choose_direction(TileCoordsXYZ loc, rct_peep* peep)
 #endif // defined(DEBUG_LEVEL_1) && DEBUG_LEVEL_1
 
     // Get the path element at this location
-    rct_tile_element* dest_tile_element = map_get_first_element_at(loc.x, loc.y);
+    TileElement* dest_tile_element = map_get_first_element_at(loc.x, loc.y);
     /* Where there are multiple matching map elements placed with zero
      * clearance, save the first one for later use to determine the path
      * slope - this maintains the original behaviour (which only processes
@@ -1200,7 +1200,7 @@ int32_t peep_pathfind_choose_direction(TileCoordsXYZ loc, rct_peep* peep)
      * EXPECT to experience path finding irregularities due to those paths!
      * In particular common edges at different heights will not work
      * in a useful way. Simply do not do it! :-) */
-    rct_tile_element* first_tile_element = nullptr;
+    TileElement* first_tile_element = nullptr;
 
     bool found = false;
     uint8_t permitted_edges = 0;
@@ -1353,8 +1353,7 @@ int32_t peep_pathfind_choose_direction(TileCoordsXYZ loc, rct_peep* peep)
             edges &= ~(1 << test_edge);
             uint8_t height = loc.z;
 
-            if (first_tile_element->AsPath()->IsSloped()
-                && footpath_element_get_slope_direction(first_tile_element) == test_edge)
+            if (first_tile_element->AsPath()->IsSloped() && first_tile_element->AsPath()->GetSlopeDirection() == test_edge)
             {
                 height += 0x2;
             }
@@ -1563,7 +1562,7 @@ static uint8_t get_nearest_park_entrance_index(uint16_t x, uint16_t y)
  *
  *  rct2: 0x006952C0
  */
-static int32_t guest_path_find_entering_park(rct_peep* peep, [[maybe_unused]] rct_tile_element* tile_element, uint8_t edges)
+static int32_t guest_path_find_entering_park(rct_peep* peep, [[maybe_unused]] TileElement* tile_element, uint8_t edges)
 {
     // Send peeps to the nearest park entrance.
     uint8_t chosenEntrance = get_nearest_park_entrance_index(peep->next_x, peep->next_y);
@@ -1618,7 +1617,7 @@ static uint8_t get_nearest_peep_spawn_index(uint16_t x, uint16_t y)
  *
  *  rct2: 0x0069536C
  */
-static int32_t guest_path_find_leaving_park(rct_peep* peep, [[maybe_unused]] rct_tile_element* tile_element, uint8_t edges)
+static int32_t guest_path_find_leaving_park(rct_peep* peep, [[maybe_unused]] TileElement* tile_element, uint8_t edges)
 {
     // Send peeps to the nearest spawn point.
     uint8_t chosenSpawn = get_nearest_peep_spawn_index(peep->next_x, peep->next_y);
@@ -1653,7 +1652,7 @@ static int32_t guest_path_find_leaving_park(rct_peep* peep, [[maybe_unused]] rct
  *
  *  rct2: 0x00695161
  */
-static int32_t guest_path_find_park_entrance(rct_peep* peep, [[maybe_unused]] rct_tile_element* tile_element, uint8_t edges)
+static int32_t guest_path_find_park_entrance(rct_peep* peep, [[maybe_unused]] TileElement* tile_element, uint8_t edges)
 {
     uint8_t entranceNum;
 
@@ -1726,7 +1725,7 @@ static int32_t guest_path_find_park_entrance(rct_peep* peep, [[maybe_unused]] rc
 static void get_ride_queue_end(TileCoordsXYZ& loc)
 {
     TileCoordsXY queueEnd = { 0, 0 };
-    rct_tile_element* tileElement = map_get_first_element_at(loc.x, loc.y);
+    TileElement* tileElement = map_get_first_element_at(loc.x, loc.y);
 
     if (tileElement == nullptr)
     {
@@ -1750,8 +1749,8 @@ static void get_ride_queue_end(TileCoordsXYZ& loc)
         return;
 
     uint8_t direction = tileElement->GetDirectionWithOffset(2);
-    rct_tile_element* lastPathElement = nullptr;
-    rct_tile_element* firstPathElement = nullptr;
+    TileElement* lastPathElement = nullptr;
+    TileElement* firstPathElement = nullptr;
 
     int16_t baseZ = tileElement->base_height;
     TileCoordsXY nextTile = { loc.x, loc.y };
@@ -1766,7 +1765,7 @@ static void get_ride_queue_end(TileCoordsXYZ& loc)
             // queueEnd.direction = direction;
             if (tileElement->AsPath()->IsSloped())
             {
-                if (footpath_element_get_slope_direction(tileElement) == direction)
+                if (tileElement->AsPath()->GetSlopeDirection() == direction)
                 {
                     baseZ += 2;
                 }
@@ -1788,7 +1787,7 @@ static void get_ride_queue_end(TileCoordsXYZ& loc)
             {
                 if (tileElement->AsPath()->IsSloped())
                 {
-                    if (footpath_element_get_slope_direction(tileElement) != direction)
+                    if (tileElement->AsPath()->GetSlopeDirection() != direction)
                     {
                         break;
                     }
@@ -1802,7 +1801,7 @@ static void get_ride_queue_end(TileCoordsXYZ& loc)
                 if (!tileElement->AsPath()->IsSloped())
                     break;
 
-                if (footpath_element_get_slope_direction(tileElement) != (direction ^ 2))
+                if (tileElement->AsPath()->GetSlopeDirection() != (direction ^ 2))
                     break;
 
                 baseZ -= 2;
@@ -1817,25 +1816,25 @@ static void get_ride_queue_end(TileCoordsXYZ& loc)
         if (!tileElement->AsPath()->IsQueue())
             break;
 
-        if (!(tileElement->properties.path.edges & (1 << (direction ^ (1 << 1)))))
+        if (!(tileElement->AsPath()->GetEdges() & (1 << (direction ^ (1 << 1)))))
             break;
 
         if (firstPathElement == nullptr)
             firstPathElement = tileElement;
 
         // More queue to go.
-        if (tileElement->properties.path.edges & (1 << (direction)))
+        if (tileElement->AsPath()->GetEdges() & (1 << (direction)))
             continue;
 
         direction++;
         direction &= 3;
         // More queue to go.
-        if (tileElement->properties.path.edges & (1 << (direction)))
+        if (tileElement->AsPath()->GetEdges() & (1 << (direction)))
             continue;
 
         direction ^= (1 << 1);
         // More queue to go.
-        if (tileElement->properties.path.edges & (1 << (direction)))
+        if (tileElement->AsPath()->GetEdges() & (1 << (direction)))
             continue;
 
         break;
@@ -1879,7 +1878,7 @@ int32_t guest_path_finding(rct_peep* peep)
 
     TileCoordsXYZ loc = { peep->next_x / 32, peep->next_y / 32, peep->next_z };
 
-    rct_tile_element* tileElement = map_get_path_element_at(loc.x, loc.y, loc.z);
+    TileElement* tileElement = map_get_path_element_at(loc.x, loc.y, loc.z);
     if (tileElement == nullptr)
     {
         return 1;

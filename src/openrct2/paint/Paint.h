@@ -14,7 +14,7 @@
 #include "../interface/Colour.h"
 #include "../world/Location.hpp"
 
-struct rct_tile_element;
+struct TileElement;
 
 #pragma pack(push, 1)
 /* size 0x12 */
@@ -72,14 +72,14 @@ struct paint_struct
     uint8_t flags;
     uint8_t quadrant_flags;
     attached_paint_struct* attached_ps; // 0x1C
-    paint_struct* var_20;
+    paint_struct* children;
     paint_struct* next_quadrant_ps; // 0x24
     uint8_t sprite_type;            // 0x28
     uint8_t var_29;
     uint16_t pad_2A;
-    uint16_t map_x;                // 0x2C
-    uint16_t map_y;                // 0x2E
-    rct_tile_element* tileElement; // 0x30 (or sprite pointer)
+    uint16_t map_x;           // 0x2C
+    uint16_t map_y;           // 0x2E
+    TileElement* tileElement; // 0x30 (or sprite pointer)
 };
 #ifdef PLATFORM_32BIT
 // TODO: drop packing from this when all rendering is done.
@@ -142,6 +142,7 @@ struct paint_session
     rct_drawpixelinfo* DPI;
     paint_entry PaintStructs[4000];
     paint_struct* Quadrants[MAX_PAINT_QUADRANTS];
+    paint_struct PaintHead;
     uint32_t QuadrantBackIndex;
     uint32_t QuadrantFrontIndex;
     const void* CurrentlyDrawnItem;
@@ -164,9 +165,9 @@ struct paint_session
     tunnel_entry RightTunnels[TUNNEL_MAX_COUNT];
     uint8_t RightTunnelCount;
     uint8_t VerticalTunnelHeight;
-    const rct_tile_element* SurfaceElement;
-    rct_tile_element* PathElementOnSameHeight;
-    rct_tile_element* TrackElementOnSameHeight;
+    const TileElement* SurfaceElement;
+    TileElement* PathElementOnSameHeight;
+    TileElement* TrackElementOnSameHeight;
     bool DidPassSurface;
     uint8_t Unk141E9DB;
     uint16_t WaterHeight;
@@ -226,9 +227,9 @@ void paint_floating_money_effect(
 paint_session* paint_session_alloc(rct_drawpixelinfo* dpi);
 void paint_session_free(paint_session*);
 void paint_session_generate(paint_session* session);
-paint_struct paint_session_arrange(paint_session* session);
+void paint_session_arrange(paint_session* session);
 paint_struct* paint_arrange_structs_helper(paint_struct* ps_next, uint16_t quadrantIndex, uint8_t flag, uint8_t rotation);
-void paint_draw_structs(rct_drawpixelinfo* dpi, paint_struct* ps, uint32_t viewFlags);
+void paint_draw_structs(paint_session* session, uint32_t viewFlags);
 void paint_draw_money_structs(rct_drawpixelinfo* dpi, paint_string_struct* ps);
 
 // TESTING

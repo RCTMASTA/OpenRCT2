@@ -447,7 +447,7 @@ static int32_t windowTileInspectorToolMapX = 0;
 static int32_t windowTileInspectorToolMapY = 0;
 static bool windowTileInspectorApplyToAll = false;
 static bool windowTileInspectorElementCopied = false;
-static rct_tile_element tileInspectorCopiedElement;
+static TileElement tileInspectorCopiedElement;
 
 static void window_tile_inspector_mouseup(rct_window* w, rct_widgetindex widgetIndex);
 static void window_tile_inspector_resize(rct_window* w);
@@ -569,7 +569,7 @@ void window_tile_inspector_clear_clipboard()
     windowTileInspectorElementCopied = false;
 }
 
-static rct_tile_element* window_tile_inspector_get_selected_element(rct_window* w)
+static TileElement* window_tile_inspector_get_selected_element(rct_window* w)
 {
     openrct2_assert(
         windowTileInspectorSelectedIndex >= 0 && windowTileInspectorSelectedIndex < windowTileInspectorElementCount,
@@ -591,12 +591,12 @@ static void window_tile_inspector_select_element_from_list(rct_window* w, int32_
     window_invalidate(w);
 }
 
-static void window_tile_inspector_load_tile(rct_window* w, rct_tile_element* elementToSelect)
+static void window_tile_inspector_load_tile(rct_window* w, TileElement* elementToSelect)
 {
     windowTileInspectorSelectedIndex = -1;
     w->scrolls[0].v_top = 0;
 
-    rct_tile_element* element = map_get_first_element_at(windowTileInspectorTileX, windowTileInspectorTileY);
+    TileElement* element = map_get_first_element_at(windowTileInspectorTileX, windowTileInspectorTileY);
     int16_t numItems = 0;
     do
     {
@@ -796,7 +796,7 @@ static void window_tile_inspector_mouseup(rct_window* w, rct_widgetindex widgetI
         case WIDX_CLOSE:
             tool_cancel();
             window_close(w);
-            break;
+            return;
         case WIDX_BUTTON_CORRUPT:
             window_tile_inspector_insert_corrupt_element(windowTileInspectorSelectedIndex);
             break;
@@ -834,7 +834,7 @@ static void window_tile_inspector_mouseup(rct_window* w, rct_widgetindex widgetI
     }
 
     // Get the selected map element
-    rct_tile_element* const tileElement = window_tile_inspector_get_selected_element(w);
+    TileElement* const tileElement = window_tile_inspector_get_selected_element(w);
 
     // Page widgets
     switch (w->page)
@@ -1114,7 +1114,7 @@ static void window_tile_inspector_mousedown(rct_window* w, rct_widgetindex widge
                         DROPDOWN_FLAG_STAY_OPEN, 3, widget->right - widget->left - 3);
 
                     // Set current value as checked
-                    rct_tile_element* const tileElement = window_tile_inspector_get_selected_element(w);
+                    TileElement* const tileElement = window_tile_inspector_get_selected_element(w);
                     dropdown_set_checked(tileElement->AsWall()->GetSlope(), true);
                     break;
             } // switch widget index
@@ -1178,7 +1178,7 @@ static void window_tile_inspector_dropdown(rct_window* w, rct_widgetindex widget
     }
 
     // Get selected element
-    rct_tile_element* const tileElement = window_tile_inspector_get_selected_element(w);
+    TileElement* const tileElement = window_tile_inspector_get_selected_element(w);
 
     switch (w->page)
     {
@@ -1203,7 +1203,7 @@ static void window_tile_inspector_tool_update(rct_window* w, rct_widgetindex wid
 
     int16_t mapX = x;
     int16_t mapY = y;
-    rct_tile_element* clickedElement = nullptr;
+    TileElement* clickedElement = nullptr;
     if (input_test_place_object_modifier(PLACE_OBJECT_MODIFIER_COPY_Z))
     {
         get_map_coordinates_from_pos(x, y, ViewportInteractionFlags, &mapX, &mapY, nullptr, &clickedElement, nullptr);
@@ -1251,7 +1251,7 @@ static void window_tile_inspector_update_selected_tile(rct_window* w, int32_t x,
 
     int16_t mapX = x;
     int16_t mapY = y;
-    rct_tile_element* clickedElement = nullptr;
+    TileElement* clickedElement = nullptr;
     if (ctrlIsHeldDown)
     {
         get_map_coordinates_from_pos(x, y, ViewportInteractionFlags, &mapX, &mapY, nullptr, &clickedElement, nullptr);
@@ -1448,7 +1448,7 @@ static void window_tile_inspector_invalidate(rct_window* w)
     // Using a switch, because I don't think giving each page their own callbacks is
     // needed here, as only the mouseup and invalidate functions are different.
     const int32_t propertiesAnchor = w->widgets[WIDX_GROUPBOX_PROPERTIES].top;
-    const rct_tile_element* const tileElement = window_tile_inspector_get_selected_element(w);
+    const TileElement* const tileElement = window_tile_inspector_get_selected_element(w);
 
     switch (w->page)
     {
@@ -1515,25 +1515,21 @@ static void window_tile_inspector_invalidate(rct_window* w)
             w->widgets[WIDX_PATH_CHECK_EDGE_NW].bottom = w->widgets[WIDX_PATH_CHECK_EDGE_NW].top + 13;
             widget_set_checkbox_value(w, WIDX_PATH_CHECK_SLOPED, tileElement->AsPath()->IsSloped());
             widget_set_checkbox_value(
-                w, WIDX_PATH_CHECK_EDGE_NE, tileElement->properties.path.edges & (1 << ((0 - get_current_rotation()) & 3)));
+                w, WIDX_PATH_CHECK_EDGE_NE, tileElement->AsPath()->GetEdges() & (1 << ((0 - get_current_rotation()) & 3)));
             widget_set_checkbox_value(
-                w, WIDX_PATH_CHECK_EDGE_SE, tileElement->properties.path.edges & (1 << ((1 - get_current_rotation()) & 3)));
+                w, WIDX_PATH_CHECK_EDGE_SE, tileElement->AsPath()->GetEdges() & (1 << ((1 - get_current_rotation()) & 3)));
             widget_set_checkbox_value(
-                w, WIDX_PATH_CHECK_EDGE_SW, tileElement->properties.path.edges & (1 << ((2 - get_current_rotation()) & 3)));
+                w, WIDX_PATH_CHECK_EDGE_SW, tileElement->AsPath()->GetEdges() & (1 << ((2 - get_current_rotation()) & 3)));
             widget_set_checkbox_value(
-                w, WIDX_PATH_CHECK_EDGE_NW, tileElement->properties.path.edges & (1 << ((3 - get_current_rotation()) & 3)));
+                w, WIDX_PATH_CHECK_EDGE_NW, tileElement->AsPath()->GetEdges() & (1 << ((3 - get_current_rotation()) & 3)));
             widget_set_checkbox_value(
-                w, WIDX_PATH_CHECK_EDGE_E,
-                tileElement->properties.path.edges & (1 << (4 + ((0 - get_current_rotation()) & 3))));
+                w, WIDX_PATH_CHECK_EDGE_E, tileElement->AsPath()->GetCorners() & (1 << ((0 - get_current_rotation()) & 3)));
             widget_set_checkbox_value(
-                w, WIDX_PATH_CHECK_EDGE_S,
-                tileElement->properties.path.edges & (1 << (4 + ((1 - get_current_rotation()) & 3))));
+                w, WIDX_PATH_CHECK_EDGE_S, tileElement->AsPath()->GetCorners() & (1 << ((1 - get_current_rotation()) & 3)));
             widget_set_checkbox_value(
-                w, WIDX_PATH_CHECK_EDGE_W,
-                tileElement->properties.path.edges & (1 << (4 + ((2 - get_current_rotation()) & 3))));
+                w, WIDX_PATH_CHECK_EDGE_W, tileElement->AsPath()->GetCorners() & (1 << ((2 - get_current_rotation()) & 3)));
             widget_set_checkbox_value(
-                w, WIDX_PATH_CHECK_EDGE_N,
-                tileElement->properties.path.edges & (1 << (4 + ((3 - get_current_rotation()) & 3))));
+                w, WIDX_PATH_CHECK_EDGE_N, tileElement->AsPath()->GetCorners() & (1 << ((3 - get_current_rotation()) & 3)));
             break;
         case TILE_INSPECTOR_PAGE_TRACK:
             w->widgets[WIDX_TRACK_CHECK_APPLY_TO_ALL].top = GBBT(propertiesAnchor, 0);
@@ -1749,7 +1745,7 @@ static void window_tile_inspector_paint(rct_window* w, rct_drawpixelinfo* dpi)
         int32_t y = w->y + w->widgets[WIDX_GROUPBOX_DETAILS].top + 14;
 
         // Get map element
-        rct_tile_element* const tileElement = window_tile_inspector_get_selected_element(w);
+        TileElement* const tileElement = window_tile_inspector_get_selected_element(w);
 
         switch (w->page)
         {
@@ -2109,7 +2105,7 @@ static void window_tile_inspector_scrollpaint(rct_window* w, rct_drawpixelinfo* 
     if (!windowTileInspectorTileSelected)
         return;
 
-    const rct_tile_element* tileElement = map_get_first_element_at(windowTileInspectorTileX, windowTileInspectorTileY);
+    const TileElement* tileElement = map_get_first_element_at(windowTileInspectorTileX, windowTileInspectorTileY);
 
     gCurrentFontSpriteBase = FONT_SPRITE_BASE_MEDIUM;
     do

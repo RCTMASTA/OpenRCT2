@@ -16,24 +16,6 @@ struct rct_scenery_entry;
 struct rct_footpath_entry;
 
 #pragma pack(push, 1)
-struct rct_tile_element_path_properties
-{
-    uint8_t type;      // 4 0xF0 Path type, 0x08 Ride sign, 0x04 Set when path is diagonal, 0x03 Rotation
-    uint8_t additions; // 5
-    uint8_t edges;     // 6
-    union
-    {
-        uint8_t addition_status; // 7
-        uint8_t ride_index;
-    };
-};
-assert_struct_size(rct_tile_element_path_properties, 4);
-
-union rct_tile_element_properties
-{
-    rct_tile_element_path_properties path;
-};
-assert_struct_size(rct_tile_element_properties, 4);
 
 enum
 {
@@ -94,14 +76,9 @@ struct TileElementBase
  * Map element structure
  * size: 0x08
  */
-struct rct_tile_element : public TileElementBase
+struct TileElement : public TileElementBase
 {
-    union
-    {
-        uint8_t pad_04[4];
-        // TODO: Remove this field.
-        rct_tile_element_properties properties;
-    };
+    uint8_t pad_04[4];
 
     template<typename TType, TileElementType TClass> TType* as() const
     {
@@ -148,7 +125,7 @@ public:
 
     void ClearAs(uint8_t newType);
 };
-assert_struct_size(rct_tile_element, 8);
+assert_struct_size(TileElement, 8);
 
 struct SurfaceElement : TileElementBase
 {
@@ -188,8 +165,8 @@ assert_struct_size(SurfaceElement, 8);
 struct PathElement : TileElementBase
 {
 private:
-    uint8_t entryIndex; // 4 0xF0 Path type, 0x08 Ride sign, 0x04 Set when path is diagonal, 0x03 Rotation
-    uint8_t additions;  // 5
+    uint8_t entryIndex; // 4, 0xF0 Path type, 0x08 Ride sign, 0x04 Set when path is sloped, 0x03 Rotation
+    uint8_t additions;  // 5, 0bGSSSAAAA: G = Ghost, S = station index, A = addition (0 means no addition)
     uint8_t edges;      // 6
     union
     {
@@ -208,6 +185,12 @@ public:
     bool IsSloped() const;
     void SetSloped(bool isSloped);
 
+    uint8_t GetSlopeDirection() const;
+    void SetSlopeDirection(uint8_t newSlope);
+
+    uint8_t GetRideIndex() const;
+    void SetRideIndex(uint8_t newRideIndex);
+
     uint8_t GetStationIndex() const;
     void SetStationIndex(uint8_t newStationIndex);
 
@@ -217,6 +200,14 @@ public:
     bool IsQueue() const;
     void SetIsQueue(bool isQueue);
     bool HasQueueBanner() const;
+    void SetHasQueueBanner(bool hasQueueBanner);
+
+    uint8_t GetEdges() const;
+    void SetEdges(uint8_t newEdges);
+    uint8_t GetCorners() const;
+    void SetCorners(uint8_t newCorners);
+    uint8_t GetEdgesAndCorners() const;
+    void SetEdgesAndCorners(uint8_t newEdgesAndCorners);
 
     bool HasAddition() const;
     uint8_t GetAddition() const;
@@ -226,6 +217,9 @@ public:
 
     bool AdditionIsGhost() const;
     void SetAdditionIsGhost(bool isGhost);
+
+    uint8_t GetAdditionStatus() const;
+    void SetAdditionStatus(uint8_t newStatus);
 
     uint8_t GetRCT1PathType() const;
 };
@@ -297,6 +291,7 @@ public:
 
     bool IsTakingPhoto() const;
     void SetPhotoTimeout();
+    void SetPhotoTimeout(uint8_t newValue);
     void DecrementPhotoTimeout();
 
     bool IsHighlighted() const;
@@ -517,11 +512,11 @@ enum
 #define MAP_ELEM_TRACK_SEQUENCE_SEQUENCE_MASK 0b00001111
 #define MAP_ELEM_TRACK_SEQUENCE_TAKING_PHOTO_MASK 0b11110000
 
-BannerIndex tile_element_get_banner_index(rct_tile_element* tileElement);
-bool tile_element_is_underground(rct_tile_element* tileElement);
+BannerIndex tile_element_get_banner_index(TileElement* tileElement);
+bool tile_element_is_underground(TileElement* tileElement);
 
 // ~Oli414: The banner functions should probably be part of banner.
-void tile_element_set_banner_index(rct_tile_element* tileElement, BannerIndex bannerIndex);
-void tile_element_remove_banner_entry(rct_tile_element* tileElement);
+void tile_element_set_banner_index(TileElement* tileElement, BannerIndex bannerIndex);
+void tile_element_remove_banner_entry(TileElement* tileElement);
 
-uint8_t tile_element_get_ride_index(const rct_tile_element* tileElement);
+uint8_t tile_element_get_ride_index(const TileElement* tileElement);

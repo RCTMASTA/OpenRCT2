@@ -583,7 +583,7 @@ static int32_t cc_get(InteractiveConsole& console, const utf8** argv, int32_t ar
             if (w != nullptr)
             {
                 int32_t interactionType;
-                rct_tile_element* tileElement;
+                TileElement* tileElement;
                 LocationXY16 mapCoord = {};
                 rct_viewport* viewport = window_get_viewport(w);
                 get_map_coordinates_from_pos(
@@ -1214,7 +1214,7 @@ static int32_t cc_show_limits(InteractiveConsole& console, [[maybe_unused]] cons
 
     console.WriteFormatLine("Sprites: %d/%d", spriteCount, MAX_SPRITES);
     console.WriteFormatLine("Map Elements: %d/%d", tileElementCount, MAX_TILE_ELEMENTS);
-    console.WriteFormatLine("Banners: %d/%d", bannerCount, MAX_BANNERS);
+    console.WriteFormatLine("Banners: %d/%zu", bannerCount, MAX_BANNERS);
     console.WriteFormatLine("Rides: %d/%d", rideCount, MAX_RIDES);
     console.WriteFormatLine("Staff: %d/%d", staffCount, STAFF_MAX_COUNT);
     return 0;

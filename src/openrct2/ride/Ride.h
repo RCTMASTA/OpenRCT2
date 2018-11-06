@@ -341,6 +341,7 @@ struct Ride
     uint8_t cable_lift_z;
     uint16_t cable_lift;
     uint16_t queue_length[MAX_STATIONS];
+    bool CanBreakDown() const;
 };
 
 #pragma pack(push, 1)
@@ -371,11 +372,11 @@ struct track_begin_end
     int32_t begin_y;
     int32_t begin_z;
     int32_t begin_direction;
-    rct_tile_element* begin_element;
+    TileElement* begin_element;
     int32_t end_x;
     int32_t end_y;
     int32_t end_direction;
-    rct_tile_element* end_element;
+    TileElement* end_element;
 };
 #ifdef PLATFORM_32BIT
 assert_struct_size(track_begin_end, 36);
@@ -1032,7 +1033,7 @@ track_colour ride_get_track_colour(Ride* ride, int32_t colourScheme);
 vehicle_colour ride_get_vehicle_colour(Ride* ride, int32_t vehicleIndex);
 int32_t ride_get_unused_preset_vehicle_colour(uint8_t ride_sub_type);
 void ride_set_vehicle_colours_to_random_preset(Ride* ride, uint8_t preset_index);
-rct_ride_entry* get_ride_entry_by_ride(Ride* ride);
+rct_ride_entry* get_ride_entry_by_ride(const Ride* ride);
 uint8_t* get_ride_entry_indices_for_ride_type(uint8_t rideType);
 void reset_type_to_ride_entry_index_map(IObjectManager& objectManager);
 void ride_measurement_clear(Ride* ride);
@@ -1045,15 +1046,15 @@ int32_t ride_is_valid_for_test(int32_t rideIndex, int32_t goingToBeOpen, int32_t
 int32_t ride_initialise_construction_window(int32_t rideIndex);
 void ride_construction_invalidate_current_track();
 int32_t sub_6C683D(
-    int32_t* x, int32_t* y, int32_t* z, int32_t direction, int32_t type, uint16_t extra_params,
-    rct_tile_element** output_element, uint16_t flags);
-void ride_set_map_tooltip(rct_tile_element* tileElement);
+    int32_t* x, int32_t* y, int32_t* z, int32_t direction, int32_t type, uint16_t extra_params, TileElement** output_element,
+    uint16_t flags);
+void ride_set_map_tooltip(TileElement* tileElement);
 int32_t ride_music_params_update(
     int16_t x, int16_t y, int16_t z, uint8_t rideIndex, uint16_t sampleRate, uint32_t position, uint8_t* tuneId);
 void ride_music_update_final();
 void ride_prepare_breakdown(int32_t rideIndex, int32_t breakdownReason);
-rct_tile_element* ride_get_station_start_track_element(Ride* ride, int32_t stationIndex);
-rct_tile_element* ride_get_station_exit_element(int32_t x, int32_t y, int32_t z);
+TileElement* ride_get_station_start_track_element(Ride* ride, int32_t stationIndex);
+TileElement* ride_get_station_exit_element(int32_t x, int32_t y, int32_t z);
 void ride_set_status(int32_t rideIndex, int32_t status);
 void game_command_set_ride_status(
     int32_t* eax, int32_t* ebx, int32_t* ecx, int32_t* edx, int32_t* esi, int32_t* edi, int32_t* ebp);
@@ -1127,7 +1128,7 @@ bool track_block_get_next_from_zero(
     int16_t x, int16_t y, int16_t z_start, uint8_t rideIndex, uint8_t direction_start, CoordsXYE* output, int32_t* z,
     int32_t* direction, bool isGhost);
 
-bool track_block_get_previous(int32_t x, int32_t y, rct_tile_element* tileElement, track_begin_end* outTrackBeginEnd);
+bool track_block_get_previous(int32_t x, int32_t y, TileElement* tileElement, track_begin_end* outTrackBeginEnd);
 bool track_block_get_previous_from_zero(
     int16_t x, int16_t y, int16_t z, uint8_t rideIndex, uint8_t direction, track_begin_end* outTrackBeginEnd);
 
@@ -1190,7 +1191,7 @@ void ride_delete(uint8_t rideIndex);
 void ride_renew(Ride* ride);
 money16 ride_get_price(Ride* ride);
 
-rct_tile_element* get_station_platform(int32_t x, int32_t y, int32_t z, int32_t z_tolerance);
+TileElement* get_station_platform(int32_t x, int32_t y, int32_t z, int32_t z_tolerance);
 bool ride_has_adjacent_station(Ride* ride);
 bool ride_has_ratings(const Ride* ride);
 

@@ -78,15 +78,15 @@ static constexpr const uint8_t byte_98D8A4[] = {
 // clang-format on
 
 void path_paint_box_support(
-    paint_session* session, const rct_tile_element* tileElement, int32_t height, rct_footpath_entry* footpathEntry,
-    bool hasFences, uint32_t imageFlags, uint32_t sceneryImageFlags);
+    paint_session* session, const TileElement* tileElement, int32_t height, rct_footpath_entry* footpathEntry, bool hasFences,
+    uint32_t imageFlags, uint32_t sceneryImageFlags);
 void path_paint_pole_support(
-    paint_session* session, const rct_tile_element* tileElement, int16_t height, rct_footpath_entry* footpathEntry,
-    bool hasFences, uint32_t imageFlags, uint32_t sceneryImageFlags);
+    paint_session* session, const TileElement* tileElement, int16_t height, rct_footpath_entry* footpathEntry, bool hasFences,
+    uint32_t imageFlags, uint32_t sceneryImageFlags);
 
 /* rct2: 0x006A5AE5 */
 static void path_bit_lights_paint(
-    paint_session* session, rct_scenery_entry* pathBitEntry, const rct_tile_element* tileElement, int32_t height, uint8_t edges,
+    paint_session* session, rct_scenery_entry* pathBitEntry, const TileElement* tileElement, int32_t height, uint8_t edges,
     uint32_t pathBitImageFlags)
 {
     if (tileElement->AsPath()->IsSloped())
@@ -144,7 +144,7 @@ static void path_bit_lights_paint(
 
 /* rct2: 0x006A5C94 */
 static void path_bit_bins_paint(
-    paint_session* session, rct_scenery_entry* pathBitEntry, const rct_tile_element* tileElement, int32_t height, uint8_t edges,
+    paint_session* session, rct_scenery_entry* pathBitEntry, const TileElement* tileElement, int32_t height, uint8_t edges,
     uint32_t pathBitImageFlags)
 {
     if (tileElement->AsPath()->IsSloped())
@@ -166,7 +166,7 @@ static void path_bit_bins_paint(
 
             // Edges have been rotated around the rotation to check addition status
             // this will also need to be rotated.
-            binIsFull = !(tileElement->properties.path.addition_status & ror8(0x3, (2 * session->CurrentRotation)));
+            binIsFull = !(tileElement->AsPath()->GetAdditionStatus() & ror8(0x3, (2 * session->CurrentRotation)));
             if (binIsFull)
                 imageId += 8;
         }
@@ -187,7 +187,7 @@ static void path_bit_bins_paint(
 
             // Edges have been rotated around the rotation to check addition status
             // this will also need to be rotated.
-            binIsFull = !(tileElement->properties.path.addition_status & ror8(0xC, (2 * session->CurrentRotation)));
+            binIsFull = !(tileElement->AsPath()->GetAdditionStatus() & ror8(0xC, (2 * session->CurrentRotation)));
             if (binIsFull)
                 imageId += 8;
         }
@@ -209,7 +209,7 @@ static void path_bit_bins_paint(
 
             // Edges have been rotated around the rotation to check addition status
             // this will also need to be rotated.
-            binIsFull = !(tileElement->properties.path.addition_status & ror8(0x30, (2 * session->CurrentRotation)));
+            binIsFull = !(tileElement->AsPath()->GetAdditionStatus() & ror8(0x30, (2 * session->CurrentRotation)));
             if (binIsFull)
                 imageId += 8;
         }
@@ -231,7 +231,7 @@ static void path_bit_bins_paint(
 
             // Edges have been rotated around the rotation to check addition status
             // this will also need to be rotated.
-            binIsFull = !(tileElement->properties.path.addition_status & ror8(0xC0, (2 * session->CurrentRotation)));
+            binIsFull = !(tileElement->AsPath()->GetAdditionStatus() & ror8(0xC0, (2 * session->CurrentRotation)));
             if (binIsFull)
                 imageId += 8;
         }
@@ -243,7 +243,7 @@ static void path_bit_bins_paint(
 
 /* rct2: 0x006A5E81 */
 static void path_bit_benches_paint(
-    paint_session* session, rct_scenery_entry* pathBitEntry, const rct_tile_element* tileElement, int32_t height, uint8_t edges,
+    paint_session* session, rct_scenery_entry* pathBitEntry, const TileElement* tileElement, int32_t height, uint8_t edges,
     uint32_t pathBitImageFlags)
 {
     uint32_t imageId;
@@ -317,7 +317,7 @@ static void path_bit_jumping_fountains_paint(
  * @param tile_element (esi)
  */
 static void sub_6A4101(
-    paint_session* session, const rct_tile_element* tile_element, uint16_t height, uint32_t ebp, bool word_F3F038,
+    paint_session* session, const TileElement* tile_element, uint16_t height, uint32_t ebp, bool word_F3F038,
     rct_footpath_entry* footpathEntry, uint32_t base_image_id, uint32_t imageFlags)
 {
     if (tile_element->AsPath()->IsQueue())
@@ -325,7 +325,7 @@ static void sub_6A4101(
         uint8_t local_ebp = ebp & 0x0F;
         if (tile_element->AsPath()->IsSloped())
         {
-            switch ((footpath_element_get_slope_direction(tile_element) + session->CurrentRotation)
+            switch ((tile_element->AsPath()->GetSlopeDirection() + session->CurrentRotation)
                     & FOOTPATH_PROPERTIES_SLOPE_DIRECTION_MASK)
             {
                 case 0:
@@ -414,7 +414,7 @@ static void sub_6A4101(
         session->InteractionType = VIEWPORT_INTERACTION_ITEM_RIDE;
         if (tile_element->AsPath()->IsSloped())
         {
-            if (footpath_element_get_slope_direction(tile_element) == direction)
+            if (tile_element->AsPath()->GetSlopeDirection() == direction)
                 height += 16;
         }
         direction += session->CurrentRotation;
@@ -436,7 +436,7 @@ static void sub_6A4101(
 
         direction--;
         // If text shown
-        if (direction < 2 && tile_element->properties.path.ride_index != RIDE_ID_NULL && imageFlags == 0)
+        if (direction < 2 && tile_element->AsPath()->GetRideIndex() != RIDE_ID_NULL && imageFlags == 0)
         {
             uint16_t scrollingMode = footpathEntry->scrolling_mode;
             scrollingMode += direction;
@@ -444,7 +444,7 @@ static void sub_6A4101(
             set_format_arg(0, uint32_t, 0);
             set_format_arg(4, uint32_t, 0);
 
-            Ride* ride = get_ride(tile_element->properties.path.ride_index);
+            Ride* ride = get_ride(tile_element->AsPath()->GetRideIndex());
             rct_string_id string_id = STR_RIDE_ENTRANCE_CLOSED;
             if (ride->status == RIDE_STATUS_OPEN && !(ride->lifecycle_flags & RIDE_LIFECYCLE_BROKEN_DOWN))
             {
@@ -489,7 +489,7 @@ static void sub_6A4101(
 
     if (tile_element->AsPath()->IsSloped())
     {
-        switch ((footpath_element_get_slope_direction(tile_element) + session->CurrentRotation)
+        switch ((tile_element->AsPath()->GetSlopeDirection() + session->CurrentRotation)
                 & FOOTPATH_PROPERTIES_SLOPE_DIRECTION_MASK)
         {
             case 0:
@@ -662,7 +662,7 @@ static void sub_6A4101(
  * @param sceneryImageFlags (0x00F3EF74)
  */
 static void sub_6A3F61(
-    paint_session* session, const rct_tile_element* tile_element, uint16_t connectedEdges, uint16_t height,
+    paint_session* session, const TileElement* tile_element, uint16_t connectedEdges, uint16_t height,
     rct_footpath_entry* footpathEntry, uint32_t imageFlags, uint32_t sceneryImageFlags, bool word_F3F038)
 {
     // eax --
@@ -736,7 +736,7 @@ static void sub_6A3F61(
     }
 
     // This is about tunnel drawing
-    uint8_t direction = (footpath_element_get_slope_direction(tile_element) + session->CurrentRotation)
+    uint8_t direction = (tile_element->AsPath()->GetSlopeDirection() + session->CurrentRotation)
         & FOOTPATH_PROPERTIES_SLOPE_DIRECTION_MASK;
     bool sloped = tile_element->AsPath()->IsSloped();
 
@@ -786,7 +786,7 @@ static void sub_6A3F61(
 /**
  * rct2: 0x0006A3590
  */
-void path_paint(paint_session* session, uint16_t height, const rct_tile_element* tile_element)
+void path_paint(paint_session* session, uint16_t height, const TileElement* tile_element)
 {
     session->InteractionType = VIEWPORT_INTERACTION_ITEM_FOOTPATH;
 
@@ -799,7 +799,7 @@ void path_paint(paint_session* session, uint16_t height, const rct_tile_element*
     {
         if (tile_element->AsPath()->IsQueue())
         {
-            if (tile_element->properties.path.ride_index != gTrackDesignSaveRideIndex)
+            if (tile_element->AsPath()->GetRideIndex() != gTrackDesignSaveRideIndex)
             {
                 return;
             }
@@ -842,7 +842,7 @@ void path_paint(paint_session* session, uint16_t height, const rct_tile_element*
 
     int16_t x = session->MapPosition.x, y = session->MapPosition.y;
 
-    rct_tile_element* surface = map_get_surface_element_at({ session->MapPosition.x, session->MapPosition.y });
+    TileElement* surface = map_get_surface_element_at({ session->MapPosition.x, session->MapPosition.y });
 
     uint16_t bl = height / 8;
     if (surface == nullptr)
@@ -859,7 +859,7 @@ void path_paint(paint_session* session, uint16_t height, const rct_tile_element*
         {
             // Diagonal path
 
-            if (surface->AsSurface()->GetSlope() != byte_98D800[footpath_element_get_slope_direction(tile_element)])
+            if (surface->AsSurface()->GetSlope() != byte_98D800[tile_element->AsPath()->GetSlopeDirection()])
             {
                 word_F3F038 = true;
             }
@@ -899,7 +899,7 @@ void path_paint(paint_session* session, uint16_t height, const rct_tile_element*
             int32_t height2 = tile_element->base_height * 8;
             if (tile_element->AsPath()->IsSloped())
             {
-                imageId = 2619 + ((footpath_element_get_slope_direction(tile_element) + session->CurrentRotation) & 3);
+                imageId = 2619 + ((tile_element->AsPath()->GetSlopeDirection() + session->CurrentRotation) & 3);
                 height2 += 16;
             }
 
@@ -942,22 +942,22 @@ void path_paint(paint_session* session, uint16_t height, const rct_tile_element*
             rct_scenery_entry* sceneryEntry = tile_element->AsPath()->GetAdditionEntry();
             if (sceneryEntry->path_bit.flags & PATH_BIT_FLAG_LAMP)
             {
-                if (!(tile_element->properties.path.edges & EDGE_NE))
+                if (!(tile_element->AsPath()->GetEdges() & EDGE_NE))
                 {
                     lightfx_add_3d_light_magic_from_drawing_tile(
                         session->MapPosition, -16, 0, height + 23, LIGHTFX_LIGHT_TYPE_LANTERN_3);
                 }
-                if (!(tile_element->properties.path.edges & EDGE_SE))
+                if (!(tile_element->AsPath()->GetEdges() & EDGE_SE))
                 {
                     lightfx_add_3d_light_magic_from_drawing_tile(
                         session->MapPosition, 0, 16, height + 23, LIGHTFX_LIGHT_TYPE_LANTERN_3);
                 }
-                if (!(tile_element->properties.path.edges & EDGE_SW))
+                if (!(tile_element->AsPath()->GetEdges() & EDGE_SW))
                 {
                     lightfx_add_3d_light_magic_from_drawing_tile(
                         session->MapPosition, 16, 0, height + 23, LIGHTFX_LIGHT_TYPE_LANTERN_3);
                 }
-                if (!(tile_element->properties.path.edges & EDGE_NW))
+                if (!(tile_element->AsPath()->GetEdges() & EDGE_NW))
                 {
                     lightfx_add_3d_light_magic_from_drawing_tile(
                         session->MapPosition, 0, -16, height + 23, LIGHTFX_LIGHT_TYPE_LANTERN_3);
@@ -969,17 +969,17 @@ void path_paint(paint_session* session, uint16_t height, const rct_tile_element*
 }
 
 void path_paint_box_support(
-    paint_session* session, const rct_tile_element* tileElement, int32_t height, rct_footpath_entry* footpathEntry,
-    bool hasFences, uint32_t imageFlags, uint32_t sceneryImageFlags)
+    paint_session* session, const TileElement* tileElement, int32_t height, rct_footpath_entry* footpathEntry, bool hasFences,
+    uint32_t imageFlags, uint32_t sceneryImageFlags)
 {
     PathElement* pathElement = tileElement->AsPath();
 
     // Rol edges around rotation
-    uint8_t edges = ((tileElement->properties.path.edges << session->CurrentRotation) & 0xF)
-        | (((tileElement->properties.path.edges & 0xF) << session->CurrentRotation) >> 4);
+    uint8_t edges = ((tileElement->AsPath()->GetEdges() << session->CurrentRotation) & 0xF)
+        | (((tileElement->AsPath()->GetEdges()) << session->CurrentRotation) >> 4);
 
-    uint8_t corners = (((tileElement->properties.path.edges >> 4) << session->CurrentRotation) & 0xF)
-        | (((tileElement->properties.path.edges >> 4) << session->CurrentRotation) >> 4);
+    uint8_t corners = (((tileElement->AsPath()->GetCorners()) << session->CurrentRotation) & 0xF)
+        | (((tileElement->AsPath()->GetCorners()) << session->CurrentRotation) >> 4);
 
     LocationXY16 boundBoxOffset = { stru_98D804[edges][0], stru_98D804[edges][1] };
     LocationXY16 boundBoxSize = { stru_98D804[edges][2], stru_98D804[edges][3] };
@@ -989,7 +989,7 @@ void path_paint_box_support(
     uint32_t imageId;
     if (tileElement->AsPath()->IsSloped())
     {
-        imageId = ((footpath_element_get_slope_direction(tileElement) + session->CurrentRotation)
+        imageId = ((tileElement->AsPath()->GetSlopeDirection() + session->CurrentRotation)
                    & FOOTPATH_PROPERTIES_SLOPE_DIRECTION_MASK)
             + 16;
     }
@@ -1036,7 +1036,7 @@ void path_paint_box_support(
         uint32_t image_id;
         if (tileElement->AsPath()->IsSloped())
         {
-            image_id = ((footpath_element_get_slope_direction(tileElement) + session->CurrentRotation)
+            image_id = ((tileElement->AsPath()->GetSlopeDirection() + session->CurrentRotation)
                         & FOOTPATH_PROPERTIES_SLOPE_DIRECTION_MASK)
                 + footpathEntry->bridge_image + 51;
         }
@@ -1066,7 +1066,7 @@ void path_paint_box_support(
     uint16_t ax = 0;
     if (tileElement->AsPath()->IsSloped())
     {
-        ax = ((footpath_element_get_slope_direction(tileElement) + session->CurrentRotation) & 0x3) + 1;
+        ax = ((tileElement->AsPath()->GetSlopeDirection() + session->CurrentRotation) & 0x3) + 1;
     }
 
     if (byte_98D8A4[edges] == 0)
@@ -1086,13 +1086,13 @@ void path_paint_box_support(
 
     paint_util_set_general_support_height(session, height, 0x20);
 
-    if (pathElement->IsQueue() || (tileElement->properties.path.edges != 0xFF && hasFences))
+    if (pathElement->IsQueue() || (tileElement->AsPath()->GetEdgesAndCorners() != 0xFF && hasFences))
     {
         paint_util_set_segment_support_height(session, SEGMENTS_ALL, 0xFFFF, 0);
         return;
     }
 
-    if (tileElement->properties.path.edges == 0xFF)
+    if (tileElement->AsPath()->GetEdgesAndCorners() == 0xFF)
     {
         paint_util_set_segment_support_height(session, SEGMENT_C8 | SEGMENT_CC | SEGMENT_D0 | SEGMENT_D4, 0xFFFF, 0);
         return;
@@ -1122,28 +1122,28 @@ void path_paint_box_support(
 }
 
 void path_paint_pole_support(
-    paint_session* session, const rct_tile_element* tileElement, int16_t height, rct_footpath_entry* footpathEntry,
-    bool hasFences, uint32_t imageFlags, uint32_t sceneryImageFlags)
+    paint_session* session, const TileElement* tileElement, int16_t height, rct_footpath_entry* footpathEntry, bool hasFences,
+    uint32_t imageFlags, uint32_t sceneryImageFlags)
 {
     PathElement* pathElement = tileElement->AsPath();
 
     // Rol edges around rotation
-    uint8_t edges = ((tileElement->properties.path.edges << session->CurrentRotation) & 0xF)
-        | (((tileElement->properties.path.edges & 0xF) << session->CurrentRotation) >> 4);
+    uint8_t edges = ((tileElement->AsPath()->GetEdges() << session->CurrentRotation) & 0xF)
+        | (((tileElement->AsPath()->GetEdges()) << session->CurrentRotation) >> 4);
 
     LocationXY16 boundBoxOffset = { stru_98D804[edges][0], stru_98D804[edges][1] };
 
     LocationXY16 boundBoxSize = { stru_98D804[edges][2], stru_98D804[edges][3] };
 
-    uint8_t corners = (((tileElement->properties.path.edges >> 4) << session->CurrentRotation) & 0xF)
-        | (((tileElement->properties.path.edges >> 4) << session->CurrentRotation) >> 4);
+    uint8_t corners = (((tileElement->AsPath()->GetCorners()) << session->CurrentRotation) & 0xF)
+        | (((tileElement->AsPath()->GetCorners()) << session->CurrentRotation) >> 4);
 
     uint16_t edi = edges | (corners << 4);
 
     uint32_t imageId;
     if (tileElement->AsPath()->IsSloped())
     {
-        imageId = ((footpath_element_get_slope_direction(tileElement) + session->CurrentRotation) & 3) + 16;
+        imageId = ((tileElement->AsPath()->GetSlopeDirection() + session->CurrentRotation) & 3) + 16;
     }
     else
     {
@@ -1189,7 +1189,7 @@ void path_paint_pole_support(
         uint32_t bridgeImage;
         if (tileElement->AsPath()->IsSloped())
         {
-            bridgeImage = ((footpath_element_get_slope_direction(tileElement) + session->CurrentRotation)
+            bridgeImage = ((tileElement->AsPath()->GetSlopeDirection() + session->CurrentRotation)
                            & FOOTPATH_PROPERTIES_SLOPE_DIRECTION_MASK)
                 + footpathEntry->bridge_image + 16;
         }
@@ -1242,13 +1242,13 @@ void path_paint_pole_support(
 
     paint_util_set_general_support_height(session, height, 0x20);
 
-    if (pathElement->IsQueue() || (tileElement->properties.path.edges != 0xFF && hasFences))
+    if (pathElement->IsQueue() || (tileElement->AsPath()->GetEdgesAndCorners() != 0xFF && hasFences))
     {
         paint_util_set_segment_support_height(session, SEGMENTS_ALL, 0xFFFF, 0);
         return;
     }
 
-    if (tileElement->properties.path.edges == 0xFF)
+    if (tileElement->AsPath()->GetEdgesAndCorners() == 0xFF)
     {
         paint_util_set_segment_support_height(session, SEGMENT_C8 | SEGMENT_CC | SEGMENT_D0 | SEGMENT_D4, 0xFFFF, 0);
         return;

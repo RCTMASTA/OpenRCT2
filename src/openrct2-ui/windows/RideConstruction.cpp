@@ -1788,7 +1788,7 @@ static void window_ride_construction_construct(rct_window* w)
 static void window_ride_construction_mouseup_demolish(rct_window* w)
 {
     int32_t x, y, z, direction, type;
-    rct_tile_element* tileElement;
+    TileElement* tileElement;
     CoordsXYE inputElement, outputElement;
     track_begin_end trackBeginEnd;
     // bool gotoStartPlacementMode;
@@ -2033,7 +2033,7 @@ static bool ride_get_place_position_from_screen_position(int32_t screenX, int32_
 {
     int16_t mapX, mapY, mapZ;
     int32_t interactionType, direction;
-    rct_tile_element* tileElement;
+    TileElement* tileElement;
     rct_viewport* viewport;
 
     if (!_trackPlaceCtrlState)
@@ -2070,7 +2070,7 @@ static bool ride_get_place_position_from_screen_position(int32_t screenX, int32_
     {
         if (gInputPlaceObjectModifier & PLACE_OBJECT_MODIFIER_SHIFT_Z)
         {
-            constexpr uint16_t maxHeight = (std::numeric_limits<decltype(rct_tile_element::base_height)>::max() - 32)
+            constexpr uint16_t maxHeight = (std::numeric_limits<decltype(TileElement::base_height)>::max() - 32)
                 << MAX_ZOOM_LEVEL;
 
             _trackPlaceShiftZ = _trackPlaceShiftStartScreenY - screenY + 4;
@@ -2317,9 +2317,9 @@ static void window_ride_construction_draw_track_piece(
     sub_6CBCE2(dpi, rideIndex, trackType, trackDirection, d, 4096, 4096, 1024);
 }
 
-static rct_tile_element _tempTrackTileElement;
-static rct_tile_element _tempSideTrackTileElement = { 0x80, 0x8F, 128, 128, 0, 0, 0, 0 };
-static rct_tile_element* _backupTileElementArrays[5];
+static TileElement _tempTrackTileElement;
+static TileElement _tempSideTrackTileElement = { 0x80, 0x8F, 128, 128, 0, 0, 0, 0 };
+static TileElement* _backupTileElementArrays[5];
 
 /**
  *
@@ -2450,8 +2450,8 @@ static void sub_6CBCE2(
     gMapSize = preserveMapSize;
     gMapSizeMaxXY = preserveMapSizeMaxXY;
 
-    paint_struct ps = paint_session_arrange(session);
-    paint_draw_structs(dpi, &ps, gCurrentViewportFlags);
+    paint_session_arrange(session);
+    paint_draw_structs(session, gCurrentViewportFlags);
     paint_session_free(session);
 
     gCurrentViewportFlags = preserve_current_viewport_flags;
@@ -2464,7 +2464,7 @@ static void sub_6CBCE2(
 void window_ride_construction_update_active_elements_impl()
 {
     rct_window* w;
-    rct_tile_element* tileElement;
+    TileElement* tileElement;
 
     window_ride_construction_update_enabled_track_pieces();
     w = window_find_by_class(WC_RIDE_CONSTRUCTION);
@@ -3072,8 +3072,9 @@ static void window_ride_construction_update_widgets(rct_window* w)
                 window_ride_construction_widgets[WIDX_O_TRACK].image = SPR_RIDE_CONSTRUCTION_WATER_CHANNEL;
                 window_ride_construction_widgets[WIDX_U_TRACK].tooltip = STR_RIDE_CONSTRUCTION_STANDARD_RC_TRACK_TIP;
                 window_ride_construction_widgets[WIDX_O_TRACK].tooltip = STR_RIDE_CONSTRUCTION_WATER_CHANNEL_TIP;
-                if (_currentTrackCurve < TRACK_CURVE_LEFT_SMALL && _currentTrackSlopeEnd == TRACK_SLOPE_NONE
-                    && _currentTrackBankEnd == TRACK_BANK_NONE)
+                if ((_currentTrackCurve < TRACK_CURVE_LEFT_SMALL || _currentTrackCurve == (0x100 | TRACK_ELEM_S_BEND_LEFT)
+                     || _currentTrackCurve == (0x100 | TRACK_ELEM_S_BEND_RIGHT))
+                    && _currentTrackSlopeEnd == TRACK_SLOPE_NONE && _currentTrackBankEnd == TRACK_BANK_NONE)
                 {
                     window_ride_construction_widgets[WIDX_BANKING_GROUPBOX].text = STR_RIDE_CONSTRUCTION_TRACK_STYLE;
                     window_ride_construction_widgets[WIDX_U_TRACK].type = WWT_FLATBTN;
@@ -3425,7 +3426,7 @@ static void loc_6C7502(int32_t al)
  */
 static void ride_construction_set_brakes_speed(int32_t brakesSpeed)
 {
-    rct_tile_element* tileElement;
+    TileElement* tileElement;
     int32_t x, y, z;
 
     x = _currentTrackBeginX;
@@ -3593,7 +3594,7 @@ void ride_construction_toolupdate_construct(int32_t screenX, int32_t screenY)
     if (_autoRotatingShop && _rideConstructionState == RIDE_CONSTRUCTION_STATE_PLACE
         && ride_type_has_flag(ride->type, RIDE_TYPE_FLAG_IS_SHOP))
     {
-        rct_tile_element* pathsByDir[4];
+        TileElement* pathsByDir[4];
         constexpr sLocationXY8 DirOffsets[4] = { { -1, 0 }, { 0, 1 }, { 1, 0 }, { 0, -1 } };
 
         bool keepOrientation = false;
@@ -3601,8 +3602,7 @@ void ride_construction_toolupdate_construct(int32_t screenX, int32_t screenY)
         {
             pathsByDir[i] = map_get_footpath_element((x >> 5) + DirOffsets[i].x, (y >> 5) + DirOffsets[i].y, z >> 3);
 
-            if (pathsByDir[i] && (pathsByDir[i])->AsPath()->IsSloped()
-                && footpath_element_get_slope_direction(pathsByDir[i]) != i)
+            if (pathsByDir[i] && (pathsByDir[i])->AsPath()->IsSloped() && (pathsByDir[i])->AsPath()->GetSlopeDirection() != i)
             {
                 pathsByDir[i] = nullptr;
             }
@@ -3613,8 +3613,7 @@ void ride_construction_toolupdate_construct(int32_t screenX, int32_t screenY)
                 pathsByDir[i] = map_get_footpath_element((x >> 5) + DirOffsets[i].x, (y >> 5) + DirOffsets[i].y, (z >> 3) - 2);
 
                 if (pathsByDir[i]
-                    && (!(pathsByDir[i])->AsPath()->IsSloped()
-                        || footpath_element_get_slope_direction(pathsByDir[i]) != (i ^ 2)))
+                    && (!(pathsByDir[i])->AsPath()->IsSloped() || (pathsByDir[i])->AsPath()->GetSlopeDirection() != (i ^ 2)))
                 {
                     pathsByDir[i] = nullptr;
                 }

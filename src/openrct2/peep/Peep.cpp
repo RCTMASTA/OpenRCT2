@@ -74,7 +74,7 @@ uint8_t gPeepPathFindQueueRideIndex;
 // uint32_t gPeepPathFindAltStationNum;
 
 static uint8_t _unk_F1AEF0;
-static rct_tile_element* _peepRideEntranceExitElement;
+static TileElement* _peepRideEntranceExitElement;
 
 static void* _crowdSoundChannel = nullptr;
 
@@ -484,7 +484,7 @@ bool rct_peep::CheckForPath()
         return true;
     }
 
-    rct_tile_element* tile_element = map_get_first_element_at(next_x / 32, next_y / 32);
+    TileElement* tile_element = map_get_first_element_at(next_x / 32, next_y / 32);
 
     uint8_t map_type = TILE_ELEMENT_TYPE_PATH;
     if (GetNextIsSurface())
@@ -774,7 +774,7 @@ void rct_peep::PickupAbort(int32_t old_x)
 // Returns true when a peep can be dropped at the given location. When apply is set to true the peep gets dropped.
 bool rct_peep::Place(TileCoordsXYZ location, bool apply)
 {
-    rct_tile_element* tileElement = map_get_path_element_at(location.x, location.y, location.z);
+    TileElement* tileElement = map_get_path_element_at(location.x, location.y, location.z);
 
     if (!tileElement)
     {
@@ -1010,8 +1010,8 @@ void rct_peep::UpdateFalling()
     }
 
     // If not drowning then falling. Note: peeps 'fall' after leaving a ride/enter the park.
-    rct_tile_element* tile_element = map_get_first_element_at(x / 32, y / 32);
-    rct_tile_element* saved_map = nullptr;
+    TileElement* tile_element = map_get_first_element_at(x / 32, y / 32);
+    TileElement* saved_map = nullptr;
     int32_t saved_height = 0;
 
     if (tile_element != nullptr)
@@ -1022,7 +1022,7 @@ void rct_peep::UpdateFalling()
             if (tile_element->GetType() == TILE_ELEMENT_TYPE_PATH)
             {
                 int32_t height = map_height_from_slope(
-                                     { x, y }, tile_element->properties.path.type, tile_element->AsPath()->IsSloped())
+                                     { x, y }, tile_element->AsPath()->GetSlopeDirection(), tile_element->AsPath()->IsSloped())
                     + tile_element->base_height * 8;
 
                 if (height < z - 1 || height > z + 4)
@@ -1099,7 +1099,7 @@ void rct_peep::UpdateFalling()
     }
     else
     {
-        SetNextFlags(saved_map->properties.path.type & 0x3, saved_map->properties.path.type & 0x4, false);
+        SetNextFlags(saved_map->AsPath()->GetSlopeDirection(), saved_map->AsPath()->IsSloped(), false);
     }
     SetState(PEEP_STATE_1);
 }
@@ -2071,9 +2071,6 @@ void peep_thought_set_format_args(rct_peep_thought* thought)
     {
         set_format_arg(2, rct_string_id, ShopItemStringIds[thought->item].indefinite);
     }
-    else
-    {
-    }
 }
 
 /** rct2: 0x00982004 */
@@ -2428,7 +2425,7 @@ static void peep_return_to_centre_of_tile(rct_peep* peep)
  *  rct2: 0x00693f2C
  */
 static void peep_interact_with_entrance(
-    rct_peep* peep, int16_t x, int16_t y, rct_tile_element* tile_element, uint8_t& pathing_result)
+    rct_peep* peep, int16_t x, int16_t y, TileElement* tile_element, uint8_t& pathing_result)
 {
     uint8_t entranceType = tile_element->AsEntrance()->GetEntranceType();
     uint8_t rideIndex = tile_element->AsEntrance()->GetRideIndex();
@@ -2626,7 +2623,7 @@ static void peep_interact_with_entrance(
 
         // Make sure there is a path right behind the entrance, otherwise turn around
         bool found = false;
-        rct_tile_element* nextTileElement = map_get_first_element_at(next_x / 32, next_y / 32);
+        TileElement* nextTileElement = map_get_first_element_at(next_x / 32, next_y / 32);
         do
         {
             if (nextTileElement->GetType() != TILE_ELEMENT_TYPE_PATH)
@@ -2637,7 +2634,7 @@ static void peep_interact_with_entrance(
 
             if (nextTileElement->AsPath()->IsSloped())
             {
-                uint8_t slopeDirection = footpath_element_get_slope_direction(nextTileElement);
+                uint8_t slopeDirection = nextTileElement->AsPath()->GetSlopeDirection();
                 if (slopeDirection == entranceDirection)
                 {
                     if (z != nextTileElement->base_height)
@@ -2729,12 +2726,12 @@ static void peep_interact_with_entrance(
  *
  *  rct2: 0x006946D8
  */
-static void peep_footpath_move_forward(rct_peep* peep, int16_t x, int16_t y, rct_tile_element* tile_element, bool vandalism)
+static void peep_footpath_move_forward(rct_peep* peep, int16_t x, int16_t y, TileElement* tile_element, bool vandalism)
 {
     peep->next_x = (x & 0xFFE0);
     peep->next_y = (y & 0xFFE0);
     peep->next_z = tile_element->base_height;
-    peep->SetNextFlags(tile_element->properties.path.type & 3, tile_element->properties.path.type & 4, false);
+    peep->SetNextFlags(tile_element->AsPath()->GetSlopeDirection(), tile_element->AsPath()->IsSloped(), false);
 
     int16_t z = peep->GetZOnSlope(x, y);
 
@@ -2875,12 +2872,12 @@ static void peep_footpath_move_forward(rct_peep* peep, int16_t x, int16_t y, rct
  *
  *  rct2: 0x0069455E
  */
-static void peep_interact_with_path(rct_peep* peep, int16_t x, int16_t y, rct_tile_element* tile_element)
+static void peep_interact_with_path(rct_peep* peep, int16_t x, int16_t y, TileElement* tile_element)
 {
     // 0x00F1AEE2
     bool vandalism_present = false;
     if (tile_element->AsPath()->HasAddition() && (tile_element->flags & TILE_ELEMENT_FLAG_BROKEN)
-        && (tile_element->properties.path.edges & 0xF) != 0xF)
+        && (tile_element->AsPath()->GetEdges()) != 0xF)
     {
         vandalism_present = true;
     }
@@ -2905,7 +2902,7 @@ static void peep_interact_with_path(rct_peep* peep, int16_t x, int16_t y, rct_ti
 
     if (peep->type == PEEP_TYPE_GUEST && tile_element->AsPath()->IsQueue())
     {
-        uint8_t rideIndex = tile_element->properties.path.ride_index;
+        uint8_t rideIndex = tile_element->AsPath()->GetRideIndex();
 
         if (peep->state == PEEP_STATE_QUEUING)
         {
@@ -2929,7 +2926,7 @@ static void peep_interact_with_path(rct_peep* peep, int16_t x, int16_t y, rct_ti
         peep->time_lost = 0;
         uint8_t stationNum = tile_element->AsPath()->GetStationIndex();
 
-        if ((tile_element->properties.path.type & (1 << 3)) // Queue has the ride sign on it
+        if ((tile_element->AsPath()->HasQueueBanner())
             && (tile_element->AsPath()->GetQueueBannerDirection()
                 == ((peep->direction) ^ 2)) // Ride sign is facing the direction the peep is walking
         )
@@ -3001,7 +2998,7 @@ static void peep_interact_with_path(rct_peep* peep, int16_t x, int16_t y, rct_ti
  *
  *  rct2: 0x00693F70
  */
-static bool peep_interact_with_shop(rct_peep* peep, int16_t x, int16_t y, rct_tile_element* tile_element)
+static bool peep_interact_with_shop(rct_peep* peep, int16_t x, int16_t y, TileElement* tile_element)
 {
     uint8_t rideIndex = tile_element->AsTrack()->GetRideIndex();
     Ride* ride = get_ride(rideIndex);
@@ -3092,11 +3089,11 @@ static bool peep_interact_with_shop(rct_peep* peep, int16_t x, int16_t y, rct_ti
     return true;
 }
 
-bool is_valid_path_z_and_direction(rct_tile_element* tileElement, int32_t currentZ, int32_t currentDirection)
+bool is_valid_path_z_and_direction(TileElement* tileElement, int32_t currentZ, int32_t currentDirection)
 {
     if (tileElement->AsPath()->IsSloped())
     {
-        int32_t slopeDirection = footpath_element_get_slope_direction(tileElement);
+        int32_t slopeDirection = tileElement->AsPath()->GetSlopeDirection();
         if (slopeDirection == currentDirection)
         {
             if (currentZ != tileElement->base_height)
@@ -3121,7 +3118,7 @@ bool is_valid_path_z_and_direction(rct_tile_element* tileElement, int32_t curren
 
 void rct_peep::PerformNextAction(uint8_t& pathing_result)
 {
-    rct_tile_element* tmpTile;
+    TileElement* tmpTile;
     PerformNextAction(pathing_result, tmpTile);
 }
 
@@ -3129,7 +3126,7 @@ void rct_peep::PerformNextAction(uint8_t& pathing_result)
  *
  *  rct2: 0x00693C9E
  */
-void rct_peep::PerformNextAction(uint8_t& pathing_result, rct_tile_element*& tile_result)
+void rct_peep::PerformNextAction(uint8_t& pathing_result, TileElement*& tile_result)
 {
     pathing_result = 0;
     uint8_t previousAction = action;
@@ -3183,7 +3180,7 @@ void rct_peep::PerformNextAction(uint8_t& pathing_result, rct_tile_element*& til
         return;
     }
 
-    rct_tile_element* tileElement = map_get_first_element_at(actionX / 32, actionY / 32);
+    TileElement* tileElement = map_get_first_element_at(actionX / 32, actionY / 32);
     int16_t base_z = std::max(0, (z / 8) - 2);
     int16_t top_z = (z / 8) + 1;
 

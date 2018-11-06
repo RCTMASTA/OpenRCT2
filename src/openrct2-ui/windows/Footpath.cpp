@@ -154,14 +154,14 @@ static constexpr const uint8_t DefaultPathSlope[] = {
     SLOPE_IS_IRREGULAR_FLAG,
     SLOPE_IS_IRREGULAR_FLAG,
     FOOTPATH_PROPERTIES_FLAG_IS_SLOPED | 3,
-    SLOPE_IS_IRREGULAR_FLAG,
+    RAISE_FOOTPATH_FLAG,
     SLOPE_IS_IRREGULAR_FLAG,
     FOOTPATH_PROPERTIES_FLAG_IS_SLOPED | 1,
     SLOPE_IS_IRREGULAR_FLAG,
-    SLOPE_IS_IRREGULAR_FLAG,
+    RAISE_FOOTPATH_FLAG,
     FOOTPATH_PROPERTIES_FLAG_IS_SLOPED | 0,
-    SLOPE_IS_IRREGULAR_FLAG,
-    SLOPE_IS_IRREGULAR_FLAG,
+    RAISE_FOOTPATH_FLAG,
+    RAISE_FOOTPATH_FLAG,
     SLOPE_IS_IRREGULAR_FLAG,
 };
 
@@ -718,7 +718,7 @@ static void window_footpath_set_provisional_path_at_point(int32_t x, int32_t y)
     gMapSelectFlags &= ~MAP_SELECT_FLAG_ENABLE_ARROW;
 
     int32_t interactionType;
-    rct_tile_element* tileElement;
+    TileElement* tileElement;
     LocationXY16 mapCoord = {};
     get_map_coordinates_from_pos(
         x, y, VIEWPORT_INTERACTION_MASK_FOOTPATH & VIEWPORT_INTERACTION_MASK_TERRAIN, &mapCoord.x, &mapCoord.y,
@@ -758,13 +758,20 @@ static void window_footpath_set_provisional_path_at_point(int32_t x, int32_t y)
                 slope = DefaultPathSlope[tileElement->AsSurface()->GetSlope() & TILE_ELEMENT_SURFACE_RAISED_CORNERS_MASK];
                 break;
             case VIEWPORT_INTERACTION_ITEM_FOOTPATH:
-                slope = tileElement->properties.path.type
-                    & (FOOTPATH_PROPERTIES_FLAG_IS_SLOPED | FOOTPATH_PROPERTIES_SLOPE_DIRECTION_MASK);
+                slope = tileElement->AsPath()->GetSlopeDirection();
+                if (tileElement->AsPath()->IsSloped())
+                    slope |= FOOTPATH_PROPERTIES_FLAG_IS_SLOPED;
                 break;
+        }
+        uint8_t z = tileElement->base_height;
+        if (slope & RAISE_FOOTPATH_FLAG)
+        {
+            slope &= ~RAISE_FOOTPATH_FLAG;
+            z += 2;
         }
         int32_t pathType = (gFootpathSelectedType << 7) + (gFootpathSelectedId & 0xFF);
 
-        _window_footpath_cost = footpath_provisional_set(pathType, x, y, tileElement->base_height, slope);
+        _window_footpath_cost = footpath_provisional_set(pathType, x, y, z, slope);
         window_invalidate_by_class(WC_FOOTPATH);
     }
 }
@@ -776,7 +783,7 @@ static void window_footpath_set_provisional_path_at_point(int32_t x, int32_t y)
 static void window_footpath_set_selection_start_bridge_at_point(int32_t screenX, int32_t screenY)
 {
     int32_t x, y, direction;
-    rct_tile_element* tileElement;
+    TileElement* tileElement;
 
     map_invalidate_selection_rect();
     gMapSelectFlags &= ~MAP_SELECT_FLAG_ENABLE;
@@ -825,7 +832,7 @@ static void window_footpath_set_selection_start_bridge_at_point(int32_t screenX,
 static void window_footpath_place_path_at_point(int32_t x, int32_t y)
 {
     int32_t interactionType, currentType, selectedType, z, cost;
-    rct_tile_element* tileElement;
+    TileElement* tileElement;
 
     if (_footpathErrorOccured)
     {
@@ -854,7 +861,7 @@ static void window_footpath_place_path_at_point(int32_t x, int32_t y)
             currentType = DefaultPathSlope[tileElement->AsSurface()->GetSlope() & TILE_ELEMENT_SURFACE_RAISED_CORNERS_MASK];
             break;
         case VIEWPORT_INTERACTION_ITEM_FOOTPATH:
-            currentType = tileElement->properties.path.type & FOOTPATH_PROPERTIES_SLOPE_DIRECTION_MASK;
+            currentType = tileElement->AsPath()->GetSlopeDirection();
             if (tileElement->AsPath()->IsSloped())
             {
                 currentType |= FOOTPATH_PROPERTIES_FLAG_IS_SLOPED;
@@ -862,6 +869,11 @@ static void window_footpath_place_path_at_point(int32_t x, int32_t y)
             break;
     }
     z = tileElement->base_height;
+    if (currentType & RAISE_FOOTPATH_FLAG)
+    {
+        currentType &= ~RAISE_FOOTPATH_FLAG;
+        z += 2;
+    }
     selectedType = (gFootpathSelectedType << 7) + (gFootpathSelectedId & 0xFF);
 
     // Try and place path
@@ -888,7 +900,7 @@ static void window_footpath_place_path_at_point(int32_t x, int32_t y)
 static void window_footpath_start_bridge_at_point(int32_t screenX, int32_t screenY)
 {
     int32_t x, y, z, direction;
-    rct_tile_element* tileElement;
+    TileElement* tileElement;
 
     footpath_bridge_get_info_from_pos(screenX, screenY, &x, &y, &direction, &tileElement);
     if (x == LOCATION_NULL)
@@ -918,9 +930,9 @@ static void window_footpath_start_bridge_at_point(int32_t screenX, int32_t scree
         z = tileElement->base_height;
         if (tileElement->GetType() == TILE_ELEMENT_TYPE_PATH)
         {
-            if (tileElement->properties.path.type & 4)
+            if (tileElement->AsPath()->IsSloped())
             {
-                if (direction == (tileElement->properties.path.type & 3))
+                if (direction == (tileElement->AsPath()->GetSlopeDirection()))
                 {
                     z += 2;
                 }
@@ -997,17 +1009,16 @@ static void window_footpath_construct()
  *
  *  rct2: 0x006A78EF
  */
-static void footpath_remove_tile_element(rct_tile_element* tileElement)
+static void footpath_remove_tile_element(TileElement* tileElement)
 {
     int32_t x, y, z;
 
     z = tileElement->base_height;
-    int32_t pathType = tileElement->properties.path.type;
-    if (pathType & 4)
+    if (tileElement->AsPath()->IsSloped())
     {
-        pathType &= 3;
-        pathType ^= 2;
-        if (pathType == gFootpathConstructDirection)
+        uint8_t slopeDirection = tileElement->AsPath()->GetSlopeDirection();
+        slopeDirection ^= 2;
+        if (slopeDirection == gFootpathConstructDirection)
         {
             z += 2;
         }
@@ -1015,16 +1026,16 @@ static void footpath_remove_tile_element(rct_tile_element* tileElement)
 
     // Find a connected edge
     int32_t edge = gFootpathConstructDirection ^ 2;
-    if (!(tileElement->properties.path.edges & (1 << edge)))
+    if (!(tileElement->AsPath()->GetEdges() & (1 << edge)))
     {
         edge = (edge + 1) & 3;
-        if (!(tileElement->properties.path.edges & (1 << edge)))
+        if (!(tileElement->AsPath()->GetEdges() & (1 << edge)))
         {
             edge = (edge + 2) & 3;
-            if (!(tileElement->properties.path.edges & (1 << edge)))
+            if (!(tileElement->AsPath()->GetEdges() & (1 << edge)))
             {
                 edge = (edge - 1) & 3;
-                if (!(tileElement->properties.path.edges & (1 << edge)))
+                if (!(tileElement->AsPath()->GetEdges() & (1 << edge)))
                 {
                     edge ^= 2;
                 }
@@ -1051,9 +1062,9 @@ static void footpath_remove_tile_element(rct_tile_element* tileElement)
  *
  *  rct2: 0x006A7873
  */
-static rct_tile_element* footpath_get_tile_element_to_remove()
+static TileElement* footpath_get_tile_element_to_remove()
 {
-    rct_tile_element* tileElement;
+    TileElement* tileElement;
     int32_t x, y, z, zLow;
 
     x = gFootpathConstructFromPosition.x / 32;
@@ -1073,9 +1084,9 @@ static rct_tile_element* footpath_get_tile_element_to_remove()
         {
             if (tileElement->base_height == z)
             {
-                if (tileElement->properties.path.type & 4)
+                if (tileElement->AsPath()->IsSloped())
                 {
-                    if (((tileElement->properties.path.type & 3) ^ 2) != gFootpathConstructDirection)
+                    if (((tileElement->AsPath()->GetSlopeDirection()) ^ 2) != gFootpathConstructDirection)
                     {
                         continue;
                     }
@@ -1085,9 +1096,9 @@ static rct_tile_element* footpath_get_tile_element_to_remove()
             }
             else if (tileElement->base_height == zLow)
             {
-                if (!(tileElement->properties.path.type & 4))
+                if (!tileElement->AsPath()->IsSloped())
                 {
-                    if ((tileElement->properties.path.type & 3) == gFootpathConstructDirection)
+                    if ((tileElement->AsPath()->GetSlopeDirection()) == gFootpathConstructDirection)
                     {
                         continue;
                     }
@@ -1107,7 +1118,7 @@ static rct_tile_element* footpath_get_tile_element_to_remove()
  */
 static void window_footpath_remove()
 {
-    rct_tile_element* tileElement;
+    TileElement* tileElement;
 
     _window_footpath_cost = MONEY32_UNDEFINED;
     footpath_provisional_update();

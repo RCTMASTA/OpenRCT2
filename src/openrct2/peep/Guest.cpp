@@ -367,7 +367,7 @@ static void peep_decide_whether_to_leave_park(rct_peep* peep);
 static void peep_leave_park(rct_peep* peep);
 static void peep_head_for_nearest_ride_type(rct_peep* peep, int32_t rideType);
 static void peep_head_for_nearest_ride_with_flags(rct_peep* peep, int32_t rideTypeFlags);
-bool loc_690FD0(rct_peep* peep, uint8_t* rideToView, uint8_t* rideSeatToView, rct_tile_element* tileElement);
+bool loc_690FD0(rct_peep* peep, uint8_t* rideToView, uint8_t* rideSeatToView, TileElement* tileElement);
 
 void rct_peep::Tick128UpdateGuest(int32_t index)
 {
@@ -630,7 +630,7 @@ void rct_peep::Tick128UpdateGuest(int32_t index)
                 {
                     /* Peep happiness is affected once the peep has been waiting
                      * too long in a queue. */
-                    rct_tile_element* tileElement = map_get_first_element_at(next_x / 32, next_y / 32);
+                    TileElement* tileElement = map_get_first_element_at(next_x / 32, next_y / 32);
                     bool found = false;
                     do
                     {
@@ -1617,7 +1617,7 @@ void rct_peep::PickRideToGoOn()
             {
                 if (tileX >= 0 && tileY >= 0 && tileX < (256 * 32) && tileY < (256 * 32))
                 {
-                    rct_tile_element* tileElement = map_get_first_element_at(tileX >> 5, tileY >> 5);
+                    TileElement* tileElement = map_get_first_element_at(tileX >> 5, tileY >> 5);
                     do
                     {
                         if (tileElement->GetType() != TILE_ELEMENT_TYPE_TRACK)
@@ -2707,7 +2707,7 @@ static uint8_t peep_assess_surroundings(int16_t centre_x, int16_t centre_y, int1
     {
         for (int16_t y = initial_y; y < final_y; y += 32)
         {
-            rct_tile_element* tileElement = map_get_first_element_at(x / 32, y / 32);
+            TileElement* tileElement = map_get_first_element_at(x / 32, y / 32);
 
             do
             {
@@ -2950,7 +2950,7 @@ static void peep_head_for_nearest_ride_type(rct_peep* peep, int32_t rideType)
             {
                 if (x >= 0 && y >= 0 && x < (256 * 32) && y < (256 * 32))
                 {
-                    rct_tile_element* tileElement = map_get_first_element_at(x >> 5, y >> 5);
+                    TileElement* tileElement = map_get_first_element_at(x >> 5, y >> 5);
                     do
                     {
                         if (tileElement->GetType() != TILE_ELEMENT_TYPE_TRACK)
@@ -3079,7 +3079,7 @@ static void peep_head_for_nearest_ride_with_flags(rct_peep* peep, int32_t rideTy
             {
                 if (x >= 0 && y >= 0 && x < (256 * 32) && y < (256 * 32))
                 {
-                    rct_tile_element* tileElement = map_get_first_element_at(x >> 5, y >> 5);
+                    TileElement* tileElement = map_get_first_element_at(x >> 5, y >> 5);
                     do
                     {
                         if (tileElement->GetType() != TILE_ELEMENT_TYPE_TRACK)
@@ -3460,7 +3460,7 @@ static void peep_update_ride_leave_entrance_spiral_slide(rct_peep* peep, Ride* r
     entrance_loc.x = ride->station_starts[peep->current_ride_station].x * 32;
     entrance_loc.y = ride->station_starts[peep->current_ride_station].y * 32;
 
-    rct_tile_element* tile_element = ride_get_station_start_track_element(ride, peep->current_ride_station);
+    TileElement* tile_element = ride_get_station_start_track_element(ride, peep->current_ride_station);
 
     uint8_t direction_track = (tile_element == nullptr ? 0 : tile_element->GetDirection());
 
@@ -3516,7 +3516,7 @@ static void peep_update_ride_leave_entrance_waypoints(rct_peep* peep, Ride* ride
     waypoint.x = ride->station_starts[peep->current_ride_station].x * 32 + 16;
     waypoint.y = ride->station_starts[peep->current_ride_station].y * 32 + 16;
 
-    rct_tile_element* tile_element = ride_get_station_start_track_element(ride, peep->current_ride_station);
+    TileElement* tile_element = ride_get_station_start_track_element(ride, peep->current_ride_station);
 
     uint8_t direction_track = (tile_element == nullptr ? 0 : tile_element->GetDirection());
 
@@ -4036,7 +4036,7 @@ void rct_peep::UpdateRideLeaveVehicle()
                 if (trackType == TRACK_ELEM_FLAT || trackType > TRACK_ELEM_MIDDLE_STATION)
                     continue;
 
-                rct_tile_element* inner_map = map_get_first_element_at(vehicle->track_x / 32, vehicle->track_y / 32);
+                TileElement* inner_map = map_get_first_element_at(vehicle->track_x / 32, vehicle->track_y / 32);
                 for (;; inner_map++)
                 {
                     if (inner_map->GetType() != TILE_ELEMENT_TYPE_TRACK)
@@ -4122,7 +4122,7 @@ void rct_peep::UpdateRideLeaveVehicle()
     waypointLoc.x = ride->station_starts[current_ride_station].x * 32 + 16;
     waypointLoc.y = ride->station_starts[current_ride_station].y * 32 + 16;
 
-    rct_tile_element* trackElement = ride_get_station_start_track_element(ride, current_ride_station);
+    TileElement* trackElement = ride_get_station_start_track_element(ride, current_ride_station);
 
     uint8_t station_direction = (trackElement == nullptr ? 0 : trackElement->GetDirection());
 
@@ -4745,7 +4745,7 @@ void rct_peep::UpdateRideMazePathfinding()
     int16_t stationHeight = ride->station_heights[0];
 
     // Find the station track element
-    rct_tile_element* tileElement = map_get_first_element_at(actionX / 32, actionY / 32);
+    TileElement* tileElement = map_get_first_element_at(actionX / 32, actionY / 32);
     do
     {
         if (tileElement->GetType() == TILE_ELEMENT_TYPE_TRACK && stationHeight == tileElement->base_height)
@@ -4907,13 +4907,14 @@ void rct_peep::UpdateRideLeaveExit()
     actionY = y & 0xFFE0;
 
     // Find the station track element
-    rct_tile_element* tileElement = map_get_first_element_at(actionX / 32, actionY / 32);
+    TileElement* tileElement = map_get_first_element_at(actionX / 32, actionY / 32);
     do
     {
         if (tileElement->GetType() != TILE_ELEMENT_TYPE_PATH)
             continue;
 
-        int16_t height = map_height_from_slope({ x, y }, tileElement->properties.path.type, tileElement->AsPath()->IsSloped());
+        int16_t height = map_height_from_slope(
+            { x, y }, tileElement->AsPath()->GetSlopeDirection(), tileElement->AsPath()->IsSloped());
         height += tileElement->base_height * 8;
 
         int16_t z_diff = z - height;
@@ -5250,7 +5251,7 @@ void rct_peep::UpdateWalking()
 
     if (GetNextIsSurface())
     {
-        rct_tile_element* tile_element = map_get_surface_element_at({ next_x, next_y });
+        TileElement* tile_element = map_get_surface_element_at({ next_x, next_y });
 
         int32_t water_height = tile_element->AsSurface()->GetWaterHeight();
         if (water_height)
@@ -5300,7 +5301,7 @@ void rct_peep::UpdateWalking()
     if (GetNextIsSurface() || GetNextIsSloped())
         return;
 
-    rct_tile_element* tileElement = map_get_first_element_at(next_x / 32, next_y / 32);
+    TileElement* tileElement = map_get_first_element_at(next_x / 32, next_y / 32);
 
     for (;; tileElement++)
     {
@@ -5332,7 +5333,7 @@ void rct_peep::UpdateWalking()
         }
     }
 
-    int32_t edges = (tileElement->properties.path.edges & 0xF) ^ 0xF;
+    int32_t edges = (tileElement->AsPath()->GetEdges()) ^ 0xF;
     if (edges == 0)
         return;
 
@@ -5733,7 +5734,7 @@ void rct_peep::UpdateUsingBin()
                 return;
             }
 
-            rct_tile_element* tileElement = map_get_first_element_at(next_x / 32, next_y / 32);
+            TileElement* tileElement = map_get_first_element_at(next_x / 32, next_y / 32);
 
             for (;; tileElement++)
             {
@@ -5781,7 +5782,7 @@ void rct_peep::UpdateUsingBin()
             uint8_t selected_bin = var_37 * 2;
 
             // This counts down 2 = No rubbish, 0 = full
-            uint8_t space_left_in_bin = 0x3 & (tileElement->properties.path.addition_status >> selected_bin);
+            uint8_t space_left_in_bin = 0x3 & (tileElement->AsPath()->GetAdditionStatus() >> selected_bin);
             uint32_t empty_containers = HasEmptyContainerStandardFlag();
 
             for (uint8_t cur_container = 0; cur_container < 32; cur_container++)
@@ -5847,10 +5848,12 @@ void rct_peep::UpdateUsingBin()
                 UpdateSpriteType();
             }
 
+            uint8_t additionStatus = tileElement->AsPath()->GetAdditionStatus();
             // Place new amount in bin by first clearing the value
-            tileElement->properties.path.addition_status &= ~(3 << selected_bin);
+            additionStatus &= ~(3 << selected_bin);
             // Then placing the new value.
-            tileElement->properties.path.addition_status |= space_left_in_bin << selected_bin;
+            additionStatus |= space_left_in_bin << selected_bin;
+            tileElement->AsPath()->SetAdditionStatus(additionStatus);
 
             map_invalidate_tile_zoom0(next_x, next_y, tileElement->base_height << 3, tileElement->clearance_height << 3);
             StateReset();
@@ -5904,7 +5907,7 @@ bool rct_peep::UpdateWalkingFindBench()
     if (!ShouldFindBench())
         return false;
 
-    rct_tile_element* tileElement = map_get_first_element_at(next_x / 32, next_y / 32);
+    TileElement* tileElement = map_get_first_element_at(next_x / 32, next_y / 32);
 
     for (;; tileElement++)
     {
@@ -5932,7 +5935,7 @@ bool rct_peep::UpdateWalkingFindBench()
     if (tileElement->AsPath()->AdditionIsGhost())
         return false;
 
-    int32_t edges = (tileElement->properties.path.edges & 0xF) ^ 0xF;
+    int32_t edges = (tileElement->AsPath()->GetEdges()) ^ 0xF;
     if (edges == 0)
         return false;
 
@@ -5999,7 +6002,7 @@ bool rct_peep::UpdateWalkingFindBin()
     if (peep->GetNextIsSurface())
         return false;
 
-    rct_tile_element* tileElement = map_get_first_element_at(peep->next_x / 32, peep->next_y / 32);
+    TileElement* tileElement = map_get_first_element_at(peep->next_x / 32, peep->next_y / 32);
 
     for (;; tileElement++)
     {
@@ -6031,14 +6034,14 @@ bool rct_peep::UpdateWalkingFindBin()
     if (tileElement->AsPath()->AdditionIsGhost())
         return false;
 
-    int32_t edges = (tileElement->properties.path.edges & 0xF) ^ 0xF;
+    int32_t edges = (tileElement->AsPath()->GetEdges()) ^ 0xF;
     if (edges == 0)
         return false;
 
     uint8_t chosen_edge = scenario_rand() & 0x3;
 
     // Note: Bin quantity is inverted 0 = full, 3 = empty
-    uint8_t bin_quantities = tileElement->properties.path.addition_status;
+    uint8_t bin_quantities = tileElement->AsPath()->GetAdditionStatus();
 
     // Rotate the bin to the correct edge. Makes it easier for next calc.
     bin_quantities = ror8(ror8(bin_quantities, chosen_edge), chosen_edge);
@@ -6100,7 +6103,7 @@ static void peep_update_walking_break_scenery(rct_peep* peep)
     if (peep->GetNextIsSurface())
         return;
 
-    rct_tile_element* tileElement = map_get_first_element_at(peep->next_x / 32, peep->next_y / 32);
+    TileElement* tileElement = map_get_first_element_at(peep->next_x / 32, peep->next_y / 32);
 
     for (;; tileElement++)
     {
@@ -6128,7 +6131,7 @@ static void peep_update_walking_break_scenery(rct_peep* peep)
     if (tileElement->AsPath()->AdditionIsGhost())
         return;
 
-    int32_t edges = tileElement->properties.path.edges & 0xF;
+    int32_t edges = tileElement->AsPath()->GetEdges();
     if (edges == 0xF)
         return;
 
@@ -6178,7 +6181,7 @@ static void peep_update_walking_break_scenery(rct_peep* peep)
  *
  * @return (CF)
  */
-static bool peep_should_watch_ride(rct_tile_element* tileElement)
+static bool peep_should_watch_ride(TileElement* tileElement)
 {
     Ride* ride = get_ride(tileElement->AsTrack()->GetRideIndex());
 
@@ -6233,7 +6236,7 @@ static bool peep_should_watch_ride(rct_tile_element* tileElement)
     return true;
 }
 
-bool loc_690FD0(rct_peep* peep, uint8_t* rideToView, uint8_t* rideSeatToView, rct_tile_element* tileElement)
+bool loc_690FD0(rct_peep* peep, uint8_t* rideToView, uint8_t* rideSeatToView, TileElement* tileElement)
 {
     Ride* ride = get_ride(tileElement->AsTrack()->GetRideIndex());
 
@@ -6280,7 +6283,7 @@ bool loc_690FD0(rct_peep* peep, uint8_t* rideToView, uint8_t* rideSeatToView, rc
  */
 static bool peep_find_ride_to_look_at(rct_peep* peep, uint8_t edge, uint8_t* rideToView, uint8_t* rideSeatToView)
 {
-    rct_tile_element *tileElement, *surfaceElement;
+    TileElement *tileElement, *surfaceElement;
 
     surfaceElement = map_get_surface_element_at({ peep->next_x, peep->next_y });
 
@@ -6431,6 +6434,12 @@ static bool peep_find_ride_to_look_at(rct_peep* peep, uint8_t edge, uint8_t* rid
 
     // TODO: extract loop A
     tileElement = surfaceElement;
+
+    if (tileElement == nullptr)
+    {
+        return false;
+    }
+
     do
     {
         // Ghosts are purely this-client-side and should not cause any interaction,
@@ -6719,7 +6728,7 @@ void rct_peep::UpdateSpriteType()
     {
         if ((x & 0xFFE0) < 0x1FFF && (y & 0xFFE0) < 0x1FFF)
         {
-            rct_tile_element* tileElement = map_get_first_element_at(x / 32, y / 32);
+            TileElement* tileElement = map_get_first_element_at(x / 32, y / 32);
             while (true)
             {
                 if ((z / 8) < tileElement->base_height)
