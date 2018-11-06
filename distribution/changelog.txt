@@ -5,9 +5,12 @@
 - Feature: [#7956, #7964] Add sprite font glyphs for Hungarian and some Czech letters.
 - Feature: [#7971] Toolbox option to open custom content folder.
 - Feature: [#7980] Allow data path for RCT1 to be specified by a command line argument.
+- Feature: [#8073] Auto-upload minidumps to backtrace.io (optional, MSVC/Windows only)
 - Feature: [#8078] Add save_park command to in-game console.
 - Feature: [#8080] New console variable "current_rotation" to get or set view rotation.
 - Feature: [#8099] Add Powered Launch mode to Inverted RC (for RCT1 parity).
+- Feature: [#8190] Allow building footpaths on 'corner down' terrain.
+- Feature: [#8191] Allow building on-ride photos and water S-bends on the Water Coaster.
 - Fix: [#6191] OpenRCT2 fails to run when the path has an emoji in it.
 - Fix: [#7473] Disabling sound effects also disables "Disable audio on focus loss".
 - Fix: [#7828] Copied entrances and exits stay when demolishing ride.
@@ -21,11 +24,16 @@
 - Fix: [#8090] Maze designs saved incorrectly.
 - Fix: [#8101] Title sequences window flashes after opening.
 - Fix: [#8120] Crash trying to place peep spawn outside of map.
+- Fix: [#8121] Crash Renaming park with server logging enabled.
+- Fix: [#8142] Reliability of mazes and crooked houses can go below 100%.
+- Fix: [#8187] Cannot set land ownership over ride entrances or exits in sandbox mode.
+- Fix: [#8204] Crash when tile element has no surface elements.
 - Improved: [#2940] Allow mouse-dragging to set patrol area (Singleplayer only).
 - Improved: [#7730] Draw extreme vertical and lateral Gs red in the ride window's graph tab.
 - Improved: [#7930] Automatically create folders for custom content.
 - Improved: [#7980] Show the full path of the scenario in the scenario select window.
 - Improved: [#7993] Allow assigning a keyboard shortcut for opening the tile inspector.
+- Improved: [#8107] Support Discord release of RCT2.
 - Improved: Almost completely new Hungarian translation.
 - Removed: [#7929] Support for scenario text objects.
 
