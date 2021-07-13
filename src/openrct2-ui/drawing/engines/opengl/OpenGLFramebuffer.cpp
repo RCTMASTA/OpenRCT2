@@ -1,5 +1,5 @@
 /*****************************************************************************
- * Copyright (c) 2014-2018 OpenRCT2 developers
+ * Copyright (c) 2014-2020 OpenRCT2 developers
  *
  * For a complete list of all authors, please refer to contributors.md
  * Interested in contributing? Visit https://github.com/OpenRCT2/OpenRCT2
@@ -11,7 +11,7 @@
 
 #    include "OpenGLFramebuffer.h"
 
-#    include <SDL2/SDL_video.h>
+#    include <SDL_video.h>
 #    include <algorithm>
 #    include <memory>
 #    include <openrct2/common.h>
@@ -23,7 +23,7 @@ OpenGLFramebuffer::OpenGLFramebuffer(SDL_Window* window)
     _id = BACKBUFFER_ID;
     _texture = 0;
     _depth = 0;
-    SDL_GetWindowSize(window, &_width, &_height);
+    SDL_GL_GetDrawableSize(window, &_width, &_height);
 }
 
 OpenGLFramebuffer::OpenGLFramebuffer(int32_t width, int32_t height, bool depth, bool integer)
@@ -72,7 +72,7 @@ OpenGLFramebuffer::~OpenGLFramebuffer()
 void OpenGLFramebuffer::Bind() const
 {
     glBindFramebuffer(GL_FRAMEBUFFER, _id);
-    glViewport(0, 0, (GLsizei)_width, (GLsizei)_height);
+    glViewport(0, 0, static_cast<GLsizei>(_width), static_cast<GLsizei>(_height));
 }
 
 void OpenGLFramebuffer::BindDraw() const

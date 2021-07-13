@@ -1,5 +1,5 @@
 /*****************************************************************************
- * Copyright (c) 2014-2018 OpenRCT2 developers
+ * Copyright (c) 2014-2020 OpenRCT2 developers
  *
  * For a complete list of all authors, please refer to contributors.md
  * Interested in contributing? Visit https://github.com/OpenRCT2/OpenRCT2
@@ -10,7 +10,6 @@
 #include "../../interface/Viewport.h"
 #include "../../paint/Paint.h"
 #include "../../paint/Supports.h"
-#include "../../world/Sprite.h"
 #include "../Track.h"
 #include "../TrackPaint.h"
 
@@ -162,14 +161,14 @@ static constexpr const uint32_t LogFlumeTrackFlatImageIds[4][2] = {
 };
 
 static void paint_log_flume_track_flat(
-    paint_session* session, uint8_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
+    paint_session* session, ride_id_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
     const TileElement* tileElement)
 {
     uint32_t imageId = LogFlumeTrackFlatImageIds[direction][0] | session->TrackColours[SCHEME_TRACK];
     uint32_t frontImageId = LogFlumeTrackFlatImageIds[direction][1] | session->TrackColours[SCHEME_TRACK];
 
-    sub_98197C_rotated(session, direction, imageId, 0, 0, 32, 20, 2, height, 0, 6, height);
-    sub_98197C_rotated(session, direction, frontImageId, 0, 0, 32, 1, 26, height, 0, 27, height);
+    PaintAddImageAsParentRotated(session, direction, imageId, 0, 0, 32, 20, 2, height, 0, 6, height);
+    PaintAddImageAsParentRotated(session, direction, frontImageId, 0, 0, 32, 1, 26, height, 0, 27, height);
 
     if (track_paint_util_should_paint_supports(session->MapPosition))
     {
@@ -183,11 +182,11 @@ static void paint_log_flume_track_flat(
 }
 
 static void paint_log_flume_track_station(
-    paint_session* session, uint8_t rideIndex, [[maybe_unused]] uint8_t trackSequence, uint8_t direction, int32_t height,
+    paint_session* session, ride_id_t rideIndex, [[maybe_unused]] uint8_t trackSequence, uint8_t direction, int32_t height,
     const TileElement* tileElement)
 {
     uint32_t imageId = LogFlumeTrackFlatImageIds[direction][0] | session->TrackColours[SCHEME_TRACK];
-    sub_98197C_rotated(session, direction, imageId, 0, 0, 32, 20, 1, height, 0, 6, height + 3);
+    PaintAddImageAsParentRotated(session, direction, imageId, 0, 0, 32, 20, 1, height, 0, 6, height + 3);
 
     if (direction & 1)
     {
@@ -197,7 +196,7 @@ static void paint_log_flume_track_station(
     {
         imageId = SPR_STATION_BASE_B_SW_NE | session->TrackColours[SCHEME_MISC];
     }
-    sub_98196C(session, imageId, 0, 0, 32, 32, 1, height);
+    PaintAddImageAsParent(session, imageId, 0, 0, 32, 32, 1, height);
 
     if (direction & 1)
     {
@@ -213,14 +212,14 @@ static void paint_log_flume_track_station(
     track_paint_util_draw_station_3(session, rideIndex, direction, height + 2, height, tileElement);
     // Covers shouldn't be offset by +2
 
-    paint_util_push_tunnel_rotated(session, direction, height, TUNNEL_6);
+    paint_util_push_tunnel_rotated(session, direction, height, TUNNEL_SQUARE_FLAT);
 
     paint_util_set_segment_support_height(session, SEGMENTS_ALL, 0xFFFF, 0);
     paint_util_set_general_support_height(session, height + 32, 0x20);
 }
 
 static void paint_log_flume_track_25_deg_up(
-    paint_session* session, uint8_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
+    paint_session* session, ride_id_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
     const TileElement* tileElement)
 {
     static constexpr const uint32_t imageIds[4][2] = {
@@ -233,8 +232,8 @@ static void paint_log_flume_track_25_deg_up(
     uint32_t imageId = imageIds[direction][0] | session->TrackColours[SCHEME_TRACK];
     uint32_t frontImageId = imageIds[direction][1] | session->TrackColours[SCHEME_TRACK];
 
-    sub_98197C_rotated(session, direction, imageId, 0, 0, 32, 20, 2, height, 0, 6, height);
-    sub_98197C_rotated(session, direction, frontImageId, 0, 0, 32, 1, 50, height, 0, 27, height);
+    PaintAddImageAsParentRotated(session, direction, imageId, 0, 0, 32, 20, 2, height, 0, 6, height);
+    PaintAddImageAsParentRotated(session, direction, frontImageId, 0, 0, 32, 1, 50, height, 0, 27, height);
 
     if (track_paint_util_should_paint_supports(session->MapPosition))
     {
@@ -255,7 +254,7 @@ static void paint_log_flume_track_25_deg_up(
 }
 
 static void paint_log_flume_track_flat_to_25_deg_up(
-    paint_session* session, uint8_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
+    paint_session* session, ride_id_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
     const TileElement* tileElement)
 {
     static constexpr const uint32_t imageIds[4][2] = {
@@ -268,8 +267,8 @@ static void paint_log_flume_track_flat_to_25_deg_up(
     uint32_t imageId = imageIds[direction][0] | session->TrackColours[SCHEME_TRACK];
     uint32_t frontImageId = imageIds[direction][1] | session->TrackColours[SCHEME_TRACK];
 
-    sub_98197C_rotated(session, direction, imageId, 0, 0, 32, 20, 2, height, 0, 6, height);
-    sub_98197C_rotated(session, direction, frontImageId, 0, 0, 32, 1, 42, height, 0, 27, height);
+    PaintAddImageAsParentRotated(session, direction, imageId, 0, 0, 32, 20, 2, height, 0, 6, height);
+    PaintAddImageAsParentRotated(session, direction, frontImageId, 0, 0, 32, 1, 42, height, 0, 27, height);
 
     if (track_paint_util_should_paint_supports(session->MapPosition))
     {
@@ -290,7 +289,7 @@ static void paint_log_flume_track_flat_to_25_deg_up(
 }
 
 static void paint_log_flume_track_25_deg_up_to_flat(
-    paint_session* session, uint8_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
+    paint_session* session, ride_id_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
     const TileElement* tileElement)
 {
     static constexpr const uint32_t imageIds[4][2] = {
@@ -303,8 +302,8 @@ static void paint_log_flume_track_25_deg_up_to_flat(
     uint32_t imageId = imageIds[direction][0] | session->TrackColours[SCHEME_TRACK];
     uint32_t frontImageId = imageIds[direction][1] | session->TrackColours[SCHEME_TRACK];
 
-    sub_98197C_rotated(session, direction, imageId, 0, 0, 32, 20, 2, height, 0, 6, height);
-    sub_98197C_rotated(session, direction, frontImageId, 0, 0, 32, 1, 34, height, 0, 27, height);
+    PaintAddImageAsParentRotated(session, direction, imageId, 0, 0, 32, 20, 2, height, 0, 6, height);
+    PaintAddImageAsParentRotated(session, direction, frontImageId, 0, 0, 32, 1, 34, height, 0, 27, height);
 
     if (track_paint_util_should_paint_supports(session->MapPosition))
     {
@@ -325,7 +324,7 @@ static void paint_log_flume_track_25_deg_up_to_flat(
 }
 
 static void paint_log_flume_track_25_deg_down(
-    paint_session* session, uint8_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
+    paint_session* session, ride_id_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
     const TileElement* tileElement)
 {
     static constexpr const uint32_t imageIds[4][2] = {
@@ -338,8 +337,8 @@ static void paint_log_flume_track_25_deg_down(
     uint32_t imageId = imageIds[direction][0] | session->TrackColours[SCHEME_TRACK];
     uint32_t frontImageId = imageIds[direction][1] | session->TrackColours[SCHEME_TRACK];
 
-    sub_98197C_rotated(session, direction, imageId, 0, 0, 32, 20, 2, height, 0, 6, height);
-    sub_98197C_rotated(session, direction, frontImageId, 0, 0, 32, 1, 50, height, 0, 27, height);
+    PaintAddImageAsParentRotated(session, direction, imageId, 0, 0, 32, 20, 2, height, 0, 6, height);
+    PaintAddImageAsParentRotated(session, direction, frontImageId, 0, 0, 32, 1, 50, height, 0, 27, height);
 
     if (track_paint_util_should_paint_supports(session->MapPosition))
     {
@@ -360,7 +359,7 @@ static void paint_log_flume_track_25_deg_down(
 }
 
 static void paint_log_flume_track_flat_to_25_deg_down(
-    paint_session* session, uint8_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
+    paint_session* session, ride_id_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
     const TileElement* tileElement)
 {
     static constexpr const uint32_t imageIds[4][2] = {
@@ -373,8 +372,8 @@ static void paint_log_flume_track_flat_to_25_deg_down(
     uint32_t imageId = imageIds[direction][0] | session->TrackColours[SCHEME_TRACK];
     uint32_t frontImageId = imageIds[direction][1] | session->TrackColours[SCHEME_TRACK];
 
-    sub_98197C_rotated(session, direction, imageId, 0, 0, 32, 20, 2, height, 0, 6, height);
-    sub_98197C_rotated(session, direction, frontImageId, 0, 0, 32, 1, 34, height, 0, 27, height);
+    PaintAddImageAsParentRotated(session, direction, imageId, 0, 0, 32, 20, 2, height, 0, 6, height);
+    PaintAddImageAsParentRotated(session, direction, frontImageId, 0, 0, 32, 1, 34, height, 0, 27, height);
 
     if (track_paint_util_should_paint_supports(session->MapPosition))
     {
@@ -395,7 +394,7 @@ static void paint_log_flume_track_flat_to_25_deg_down(
 }
 
 static void paint_log_flume_track_25_deg_down_to_flat(
-    paint_session* session, uint8_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
+    paint_session* session, ride_id_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
     const TileElement* tileElement)
 {
     static constexpr const uint32_t imageIds[4][2] = {
@@ -408,8 +407,8 @@ static void paint_log_flume_track_25_deg_down_to_flat(
     uint32_t imageId = imageIds[direction][0] | session->TrackColours[SCHEME_TRACK];
     uint32_t frontImageId = imageIds[direction][1] | session->TrackColours[SCHEME_TRACK];
 
-    sub_98197C_rotated(session, direction, imageId, 0, 0, 32, 20, 2, height, 0, 6, height);
-    sub_98197C_rotated(session, direction, frontImageId, 0, 0, 32, 1, 42, height, 0, 27, height);
+    PaintAddImageAsParentRotated(session, direction, imageId, 0, 0, 32, 20, 2, height, 0, 6, height);
+    PaintAddImageAsParentRotated(session, direction, frontImageId, 0, 0, 32, 1, 42, height, 0, 27, height);
 
     if (track_paint_util_should_paint_supports(session->MapPosition))
     {
@@ -430,7 +429,7 @@ static void paint_log_flume_track_25_deg_down_to_flat(
 }
 
 static void paint_log_flume_track_s_bend_left(
-    paint_session* session, uint8_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
+    paint_session* session, ride_id_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
     const TileElement* tileElement)
 {
     static constexpr const uint32_t imageIds[4][4][2] = {
@@ -459,16 +458,16 @@ static void paint_log_flume_track_s_bend_left(
     switch (trackSequence)
     {
         case 0:
-            sub_98197C_rotated(session, direction, imageId, 0, 0, 32, 27, 2, height, 0, 2, height);
-            sub_98197C_rotated(session, direction, frontImageId, 0, 0, 32, 27, 0, height, 0, 2, height + 27);
+            PaintAddImageAsParentRotated(session, direction, imageId, 0, 0, 32, 27, 2, height, 0, 2, height);
+            PaintAddImageAsParentRotated(session, direction, frontImageId, 0, 0, 32, 27, 0, height, 0, 2, height + 27);
             metal_a_supports_paint_setup(session, METAL_SUPPORTS_BOXED, 4, 0, height, session->TrackColours[SCHEME_SUPPORTS]);
             paint_util_set_segment_support_height(
                 session, paint_util_rotate_segments(SEGMENT_B4 | SEGMENT_C4 | SEGMENT_CC | SEGMENT_D0, direction), 0xFFFF, 0);
             break;
         case 1:
             bboy = (direction == 0 || direction == 1) ? 0 : 6;
-            sub_98197C_rotated(session, direction, imageId, 0, 0, 32, 26, 2, height, 0, bboy, height);
-            sub_98197C_rotated(session, direction, frontImageId, 0, 0, 32, 26, 0, height, 0, bboy, height + 27);
+            PaintAddImageAsParentRotated(session, direction, imageId, 0, 0, 32, 26, 2, height, 0, bboy, height);
+            PaintAddImageAsParentRotated(session, direction, frontImageId, 0, 0, 32, 26, 0, height, 0, bboy, height + 27);
             if (direction == 0 || direction == 1)
             {
                 metal_a_supports_paint_setup(
@@ -483,8 +482,8 @@ static void paint_log_flume_track_s_bend_left(
             break;
         case 2:
             bboy = (direction == 2 || direction == 3) ? 0 : 6;
-            sub_98197C_rotated(session, direction, imageId, 0, 0, 32, 26, 2, height, 0, bboy, height);
-            sub_98197C_rotated(session, direction, frontImageId, 0, 0, 32, 26, 0, height, 0, bboy, height + 27);
+            PaintAddImageAsParentRotated(session, direction, imageId, 0, 0, 32, 26, 2, height, 0, bboy, height);
+            PaintAddImageAsParentRotated(session, direction, frontImageId, 0, 0, 32, 26, 0, height, 0, bboy, height + 27);
             if (direction == 2 || direction == 3)
             {
                 metal_a_supports_paint_setup(
@@ -498,8 +497,8 @@ static void paint_log_flume_track_s_bend_left(
                 0xFFFF, 0);
             break;
         case 3:
-            sub_98197C_rotated(session, direction, imageId, 0, 0, 32, 27, 2, height, 0, 2, height);
-            sub_98197C_rotated(session, direction, frontImageId, 0, 0, 32, 27, 0, height, 0, 2, height + 27);
+            PaintAddImageAsParentRotated(session, direction, imageId, 0, 0, 32, 27, 2, height, 0, 2, height);
+            PaintAddImageAsParentRotated(session, direction, frontImageId, 0, 0, 32, 27, 0, height, 0, 2, height + 27);
             metal_a_supports_paint_setup(session, METAL_SUPPORTS_BOXED, 4, 0, height, session->TrackColours[SCHEME_SUPPORTS]);
             paint_util_set_segment_support_height(
                 session, paint_util_rotate_segments(SEGMENT_C0 | SEGMENT_C4 | SEGMENT_CC | SEGMENT_D0, direction), 0xFFFF, 0);
@@ -525,7 +524,7 @@ static void paint_log_flume_track_s_bend_left(
 }
 
 static void paint_log_flume_track_s_bend_right(
-    paint_session* session, uint8_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
+    paint_session* session, ride_id_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
     const TileElement* tileElement)
 {
     static constexpr const uint32_t imageIds[4][4][2] = {
@@ -554,16 +553,16 @@ static void paint_log_flume_track_s_bend_right(
     switch (trackSequence)
     {
         case 0:
-            sub_98197C_rotated(session, direction, imageId, 0, 0, 32, 27, 2, height, 0, 2, height);
-            sub_98197C_rotated(session, direction, frontImageId, 0, 0, 32, 27, 0, height, 0, 2, height + 27);
+            PaintAddImageAsParentRotated(session, direction, imageId, 0, 0, 32, 27, 2, height, 0, 2, height);
+            PaintAddImageAsParentRotated(session, direction, frontImageId, 0, 0, 32, 27, 0, height, 0, 2, height + 27);
             metal_a_supports_paint_setup(session, METAL_SUPPORTS_BOXED, 4, 0, height, session->TrackColours[SCHEME_SUPPORTS]);
             paint_util_set_segment_support_height(
                 session, paint_util_rotate_segments(SEGMENT_BC | SEGMENT_C4 | SEGMENT_CC | SEGMENT_D0, direction), 0xFFFF, 0);
             break;
         case 1:
             bboy = (direction == 2 || direction == 3) ? 0 : 6;
-            sub_98197C_rotated(session, direction, imageId, 0, 0, 32, 26, 2, height, 0, bboy, height);
-            sub_98197C_rotated(session, direction, frontImageId, 0, 0, 32, 26, 0, height, 0, bboy, height + 27);
+            PaintAddImageAsParentRotated(session, direction, imageId, 0, 0, 32, 26, 2, height, 0, bboy, height);
+            PaintAddImageAsParentRotated(session, direction, frontImageId, 0, 0, 32, 26, 0, height, 0, bboy, height + 27);
             if (direction == 0 || direction == 1)
             {
                 metal_a_supports_paint_setup(
@@ -577,8 +576,8 @@ static void paint_log_flume_track_s_bend_right(
             break;
         case 2:
             bboy = (direction == 0 || direction == 1) ? 0 : 6;
-            sub_98197C_rotated(session, direction, imageId, 0, 0, 32, 26, 2, height, 0, bboy, height);
-            sub_98197C_rotated(session, direction, frontImageId, 0, 0, 32, 26, 0, height, 0, bboy, height + 27);
+            PaintAddImageAsParentRotated(session, direction, imageId, 0, 0, 32, 26, 2, height, 0, bboy, height);
+            PaintAddImageAsParentRotated(session, direction, frontImageId, 0, 0, 32, 26, 0, height, 0, bboy, height + 27);
             if (direction == 2 || direction == 3)
             {
                 metal_a_supports_paint_setup(
@@ -591,8 +590,8 @@ static void paint_log_flume_track_s_bend_right(
                 0xFFFF, 0);
             break;
         case 3:
-            sub_98197C_rotated(session, direction, imageId, 0, 0, 32, 27, 2, height, 0, 2, height);
-            sub_98197C_rotated(session, direction, frontImageId, 0, 0, 32, 27, 0, height, 0, 2, height + 27);
+            PaintAddImageAsParentRotated(session, direction, imageId, 0, 0, 32, 27, 2, height, 0, 2, height);
+            PaintAddImageAsParentRotated(session, direction, frontImageId, 0, 0, 32, 27, 0, height, 0, 2, height + 27);
             metal_a_supports_paint_setup(session, METAL_SUPPORTS_BOXED, 4, 0, height, session->TrackColours[SCHEME_SUPPORTS]);
             paint_util_set_segment_support_height(
                 session, paint_util_rotate_segments(SEGMENT_B8 | SEGMENT_C4 | SEGMENT_CC | SEGMENT_D0, direction), 0xFFFF, 0);
@@ -618,7 +617,7 @@ static void paint_log_flume_track_s_bend_right(
 }
 
 static void paint_log_flume_track_left_quarter_turn_3_tiles(
-    paint_session* session, uint8_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
+    paint_session* session, ride_id_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
     const TileElement* tileElement)
 {
     static constexpr const uint32_t imageIds[4][3] = {
@@ -685,7 +684,7 @@ static void paint_log_flume_track_left_quarter_turn_3_tiles(
 }
 
 static void paint_log_flume_track_right_quarter_turn_3_tiles(
-    paint_session* session, uint8_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
+    paint_session* session, ride_id_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
     const TileElement* tileElement)
 {
     static constexpr const uint32_t imageIds[4][3] = {
@@ -752,11 +751,11 @@ static void paint_log_flume_track_right_quarter_turn_3_tiles(
 }
 
 static void paint_log_flume_track_on_ride_photo(
-    paint_session* session, uint8_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
+    paint_session* session, ride_id_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
     const TileElement* tileElement)
 {
     uint32_t imageId = SPR_STATION_BASE_D | IMAGE_TYPE_REMAP;
-    sub_98196C(session, imageId, 0, 0, 32, 32, 1, height);
+    PaintAddImageAsParent(session, imageId, 0, 0, 32, 32, 1, height);
 
     if (direction & 1)
     {
@@ -770,20 +769,20 @@ static void paint_log_flume_track_on_ride_photo(
     }
 
     imageId = LogFlumeTrackFlatImageIds[direction][0] | session->TrackColours[SCHEME_TRACK];
-    sub_98197C_rotated(session, direction, imageId, 0, 0, 32, 20, 0, height, 0, 6, height + 3);
+    PaintAddImageAsParentRotated(session, direction, imageId, 0, 0, 32, 20, 0, height, 0, 6, height + 3);
 
     imageId = LogFlumeTrackFlatImageIds[direction][1] | session->TrackColours[SCHEME_TRACK];
-    sub_98197C_rotated(session, direction, imageId, 0, 0, 32, 1, 21, height, 0, 27, height + 5);
+    PaintAddImageAsParentRotated(session, direction, imageId, 0, 0, 32, 1, 21, height, 0, 27, height + 5);
 
     track_paint_util_onride_photo_paint(session, direction, height + 3, tileElement);
 
-    paint_util_push_tunnel_rotated(session, direction, height, TUNNEL_6);
+    paint_util_push_tunnel_rotated(session, direction, height, TUNNEL_SQUARE_FLAT);
     paint_util_set_segment_support_height(session, SEGMENTS_ALL, 0xFFFF, 0);
     paint_util_set_general_support_height(session, height + 48, 0x20);
 }
 
 static void paint_log_flume_track_reverser(
-    paint_session* session, uint8_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
+    paint_session* session, ride_id_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
     const TileElement* tileElement)
 {
     static constexpr const uint32_t imageIds[4][2] = {
@@ -796,8 +795,8 @@ static void paint_log_flume_track_reverser(
     uint32_t imageId = imageIds[direction][0] | session->TrackColours[SCHEME_TRACK];
     uint32_t frontImageId = imageIds[direction][1] | session->TrackColours[SCHEME_TRACK];
 
-    sub_98197C_rotated(session, direction, imageId, 0, 0, 32, 20, 2, height, 0, 6, height);
-    sub_98197C_rotated(session, direction, frontImageId, 0, 0, 32, 1, 26, height, 0, 27, height);
+    PaintAddImageAsParentRotated(session, direction, imageId, 0, 0, 32, 20, 2, height, 0, 6, height);
+    PaintAddImageAsParentRotated(session, direction, frontImageId, 0, 0, 32, 1, 26, height, 0, 27, height);
 
     metal_a_supports_paint_setup(session, METAL_SUPPORTS_BOXED, 4, 0, height, session->TrackColours[SCHEME_SUPPORTS]);
 
@@ -807,40 +806,40 @@ static void paint_log_flume_track_reverser(
     paint_util_set_general_support_height(session, height + 32, 0x20);
 }
 
-TRACK_PAINT_FUNCTION get_track_paint_function_log_flume(int32_t trackType, int32_t direction)
+TRACK_PAINT_FUNCTION get_track_paint_function_log_flume(int32_t trackType)
 {
     switch (trackType)
     {
-        case TRACK_ELEM_FLAT:
+        case TrackElemType::Flat:
             return paint_log_flume_track_flat;
 
-        case TRACK_ELEM_END_STATION:
-        case TRACK_ELEM_BEGIN_STATION:
-        case TRACK_ELEM_MIDDLE_STATION:
+        case TrackElemType::EndStation:
+        case TrackElemType::BeginStation:
+        case TrackElemType::MiddleStation:
             return paint_log_flume_track_station;
-        case TRACK_ELEM_25_DEG_UP:
+        case TrackElemType::Up25:
             return paint_log_flume_track_25_deg_up;
-        case TRACK_ELEM_FLAT_TO_25_DEG_UP:
+        case TrackElemType::FlatToUp25:
             return paint_log_flume_track_flat_to_25_deg_up;
-        case TRACK_ELEM_25_DEG_UP_TO_FLAT:
+        case TrackElemType::Up25ToFlat:
             return paint_log_flume_track_25_deg_up_to_flat;
-        case TRACK_ELEM_25_DEG_DOWN:
+        case TrackElemType::Down25:
             return paint_log_flume_track_25_deg_down;
-        case TRACK_ELEM_FLAT_TO_25_DEG_DOWN:
+        case TrackElemType::FlatToDown25:
             return paint_log_flume_track_flat_to_25_deg_down;
-        case TRACK_ELEM_25_DEG_DOWN_TO_FLAT:
+        case TrackElemType::Down25ToFlat:
             return paint_log_flume_track_25_deg_down_to_flat;
-        case TRACK_ELEM_S_BEND_LEFT:
+        case TrackElemType::SBendLeft:
             return paint_log_flume_track_s_bend_left;
-        case TRACK_ELEM_S_BEND_RIGHT:
+        case TrackElemType::SBendRight:
             return paint_log_flume_track_s_bend_right;
-        case TRACK_ELEM_LEFT_QUARTER_TURN_3_TILES:
+        case TrackElemType::LeftQuarterTurn3Tiles:
             return paint_log_flume_track_left_quarter_turn_3_tiles;
-        case TRACK_ELEM_RIGHT_QUARTER_TURN_3_TILES:
+        case TrackElemType::RightQuarterTurn3Tiles:
             return paint_log_flume_track_right_quarter_turn_3_tiles;
-        case TRACK_ELEM_ON_RIDE_PHOTO:
+        case TrackElemType::OnRidePhoto:
             return paint_log_flume_track_on_ride_photo;
-        case TRACK_ELEM_LOG_FLUME_REVERSER:
+        case TrackElemType::LogFlumeReverser:
             return paint_log_flume_track_reverser;
     }
 

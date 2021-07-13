@@ -1,5 +1,5 @@
 /*****************************************************************************
- * Copyright (c) 2014-2018 OpenRCT2 developers
+ * Copyright (c) 2014-2020 OpenRCT2 developers
  *
  * For a complete list of all authors, please refer to contributors.md
  * Interested in contributing? Visit https://github.com/OpenRCT2/OpenRCT2
@@ -10,23 +10,28 @@
 #include "Paint.Surface.h"
 
 #include "../../Cheats.h"
+#include "../../Context.h"
 #include "../../OpenRCT2.h"
 #include "../../config/Config.h"
 #include "../../core/Guard.hpp"
-#include "../../core/Util.hpp"
 #include "../../drawing/Drawing.h"
 #include "../../interface/Colour.h"
 #include "../../interface/Viewport.h"
+#include "../../object/ObjectManager.h"
+#include "../../object/TerrainEdgeObject.h"
+#include "../../object/TerrainSurfaceObject.h"
 #include "../../paint/Paint.h"
+#include "../../peep/Peep.h"
 #include "../../peep/Staff.h"
 #include "../../ride/TrackDesign.h"
 #include "../../sprites.h"
-#include "../../world/Sprite.h"
+#include "../../world/Entity.h"
 #include "../../world/Surface.h"
 #include "Paint.TileElement.h"
 
 #include <algorithm>
 #include <cstring>
+#include <iterator>
 
 // clang-format off
 static constexpr const uint8_t byte_97B444[] =
@@ -38,7 +43,7 @@ static constexpr const uint8_t byte_97B444[] =
 };
 
 // rct2: 0x97B464, 0x97B474, 0x97B484, 0x97B494
-static constexpr const LocationXY16 viewport_surface_paint_data[][4] = {
+static constexpr const CoordsXY viewport_surface_paint_data[][4] = {
     {
         { 32, 0 },
         { -32, 32 },
@@ -203,218 +208,10 @@ static constexpr const uint8_t byte_97B5B0[TUNNEL_TYPE_COUNT] = {
     16, 17, 18, 19, 20, 21, 22
 };
 
-#define EDGE_SPRITE_TYPE_COUNT 4
-
-#define DEFINE_EDGE_SPRITES(base) { \
-    (base) +  0, \
-    (base) + 20, \
-    (base) + 10, \
-    (base) + 30, \
-}
-#define DEFINE_EDGE_TUNNEL_SPRITES(base) { \
-    (base) + 36, \
-    (base) + 40, \
-    (base) + 44, \
-    (base) + 48, \
-    (base) + 52, \
-    (base) + 56, \
-    (base) + 60, \
-    (base) + 64, \
-    (base) + 68, \
-    (base) + 72, \
-    (base) + 76, \
-    (base) + 80, \
-    (base) + 36, \
-    (base) + 48, \
-    (base) + 60, \
-    (base) + 72, \
-    (base) + 36, \
-    (base) + 36, \
-    (base) + 36, \
-    (base) + 36, \
-    (base) + 36, \
-    (base) + 36, \
-    (base) + 36, \
-}
-
-#define DEFINE_EDGE_TUNNEL_SPRITES_WITH_DOORS(base) { \
-    (base) + 36, \
-    (base) + 40, \
-    (base) + 44, \
-    (base) + 48, \
-    (base) + 52, \
-    (base) + 56, \
-    (base) + 60, \
-    (base) + 64, \
-    (base) + 68, \
-    (base) + 72, \
-    (base) + 76, \
-    (base) + 80, \
-    (base) + 36, \
-    (base) + 48, \
-    (base) + 60, \
-    (base) + 72, \
-    (base) + 76, \
-    (base) + 80, \
-    (base) + 84, \
-    (base) + 88, \
-    (base) + 92, \
-    (base) + 96, \
-    (base) + 100, \
-}
-
-static constexpr const uint32_t _terrainEdgeSpriteIds[][EDGE_SPRITE_TYPE_COUNT] =
-{
-    DEFINE_EDGE_SPRITES(SPR_EDGE_ROCK_BASE),
-    DEFINE_EDGE_SPRITES(SPR_EDGE_WOOD_RED_BASE),
-    DEFINE_EDGE_SPRITES(SPR_EDGE_WOOD_BLACK_BASE),
-    DEFINE_EDGE_SPRITES(SPR_EDGE_ICE_BASE),
-    DEFINE_EDGE_SPRITES(SPR_CSG_EDGE_BRICK_BASE),
-    DEFINE_EDGE_SPRITES(SPR_CSG_EDGE_IRON_BASE),
-    DEFINE_EDGE_SPRITES(SPR_CSG_EDGE_GREY_BASE),
-    DEFINE_EDGE_SPRITES(SPR_CSG_EDGE_YELLOW_BASE),
-    DEFINE_EDGE_SPRITES(SPR_CSG_EDGE_RED_BASE),
-    DEFINE_EDGE_SPRITES(SPR_CSG_EDGE_PURPLE_BASE),
-    DEFINE_EDGE_SPRITES(SPR_CSG_EDGE_GREEN_BASE),
-    DEFINE_EDGE_SPRITES(SPR_CSG_EDGE_STONE_BROWN_BASE),
-    DEFINE_EDGE_SPRITES(SPR_CSG_EDGE_STONE_GREY_BASE),
-    DEFINE_EDGE_SPRITES(SPR_CSG_EDGE_SKYSCRAPER_A_BASE),
-    DEFINE_EDGE_SPRITES(SPR_CSG_EDGE_SKYSCRAPER_B_BASE),
-};
-
-static constexpr const uint32_t _terrainEdgeTunnelSpriteIds[][TUNNEL_TYPE_COUNT] =
-{
-    DEFINE_EDGE_TUNNEL_SPRITES(SPR_EDGE_ROCK_BASE),
-    DEFINE_EDGE_TUNNEL_SPRITES(SPR_EDGE_WOOD_RED_BASE),
-    DEFINE_EDGE_TUNNEL_SPRITES(SPR_EDGE_WOOD_BLACK_BASE),
-    DEFINE_EDGE_TUNNEL_SPRITES(SPR_EDGE_ICE_BASE),
-    DEFINE_EDGE_TUNNEL_SPRITES(SPR_CSG_EDGE_BRICK_BASE),
-    DEFINE_EDGE_TUNNEL_SPRITES(SPR_CSG_EDGE_IRON_BASE),
-    DEFINE_EDGE_TUNNEL_SPRITES_WITH_DOORS(SPR_CSG_EDGE_GREY_BASE),
-    DEFINE_EDGE_TUNNEL_SPRITES_WITH_DOORS(SPR_CSG_EDGE_YELLOW_BASE),
-    DEFINE_EDGE_TUNNEL_SPRITES_WITH_DOORS(SPR_CSG_EDGE_RED_BASE),
-    DEFINE_EDGE_TUNNEL_SPRITES_WITH_DOORS(SPR_CSG_EDGE_PURPLE_BASE),
-    DEFINE_EDGE_TUNNEL_SPRITES_WITH_DOORS(SPR_CSG_EDGE_GREEN_BASE),
-    DEFINE_EDGE_TUNNEL_SPRITES_WITH_DOORS(SPR_CSG_EDGE_STONE_BROWN_BASE),
-    DEFINE_EDGE_TUNNEL_SPRITES_WITH_DOORS(SPR_CSG_EDGE_STONE_GREY_BASE),
-    DEFINE_EDGE_TUNNEL_SPRITES_WITH_DOORS(SPR_CSG_EDGE_SKYSCRAPER_A_BASE),
-    DEFINE_EDGE_TUNNEL_SPRITES_WITH_DOORS(SPR_CSG_EDGE_SKYSCRAPER_B_BASE),
-};
-
 static constexpr const uint8_t byte_97B740[] =
 {
     0, 0, 0, 0, 0, 0, 0, 2, 0, 0,
     0, 3, 0, 1, 4, 0
-};
-
-static constexpr const uint32_t dword_97B750[][2] =
-{
-    { SPR_TERRAIN_GRASS,                                          SPR_TERRAIN_GRASS_GRID },
-    { SPR_TERRAIN_SAND_YELLOW,                                    SPR_TERRAIN_SAND_YELLOW_GRID },
-    { SPR_TERRAIN_DIRT,                                           SPR_TERRAIN_DIRT_GRID },
-    { SPR_TERRAIN_ROCK,                                           SPR_TERRAIN_ROCK_GRID },
-    { SPR_TERRAIN_MARTIAN,                                        SPR_TERRAIN_MARTIAN_GRID },
-    { SPR_TERRAIN_CHECKERBOARD,                                   SPR_TERRAIN_CHECKERBOARD_GRID },
-    { SPR_TERRAIN_GRASS_CLUMPS,                                   SPR_TERRAIN_GRASS_CLUMPS_GRID },
-    { SPR_TERRAIN_ICE,                                            SPR_TERRAIN_ICE_GRID },
-    { SPR_TERRAIN_GRID | COLOUR_BRIGHT_RED << 19 | IMAGE_TYPE_REMAP,    SPR_TERRAIN_GRID_GRID | COLOUR_BRIGHT_RED << 19 | IMAGE_TYPE_REMAP },
-    { SPR_TERRAIN_GRID | COLOUR_YELLOW << 19 | IMAGE_TYPE_REMAP,        SPR_TERRAIN_GRID_GRID | COLOUR_YELLOW << 19 | IMAGE_TYPE_REMAP },
-    { SPR_TERRAIN_GRID | COLOUR_BRIGHT_PURPLE << 19 | IMAGE_TYPE_REMAP, SPR_TERRAIN_GRID_GRID | COLOUR_BRIGHT_PURPLE << 19 | IMAGE_TYPE_REMAP },
-    { SPR_TERRAIN_GRID | COLOUR_BRIGHT_GREEN << 19 | IMAGE_TYPE_REMAP,  SPR_TERRAIN_GRID_GRID | COLOUR_BRIGHT_GREEN << 19 | IMAGE_TYPE_REMAP },
-    { SPR_TERRAIN_SAND_RED,                                       SPR_TERRAIN_SAND_RED_GRID },
-    { SPR_TERRAIN_SAND,                                           SPR_TERRAIN_SAND_GRID },
-    { SPR_TERRAIN_CHECKERBOARD_INVERTED,                          SPR_TERRAIN_CHECKERBOARD_INVERTED_GRID },
-};
-
-static constexpr const uint32_t dword_97B7C8[] =
-{
-    SPR_TERRAIN_GRASS_UNDERGROUND,
-    SPR_TERRAIN_SAND_YELLOW_UNDERGROUND,
-    SPR_TERRAIN_DIRT_UNDERGROUND,
-    SPR_TERRAIN_ROCK_UNDERGROUND,
-    SPR_TERRAIN_MARTIAN_UNDERGROUND,
-    SPR_TERRAIN_CHECKERBOARD_UNDERGROUND,
-    SPR_TERRAIN_GRASS_CLUMPS_UNDERGROUND,
-    SPR_TERRAIN_ICE_UNDERGROUND,
-    SPR_TERRAIN_GRID_UNDERGROUND | COLOUR_BRIGHT_RED << 19 | IMAGE_TYPE_REMAP,
-    SPR_TERRAIN_GRID_UNDERGROUND | COLOUR_YELLOW << 19 | IMAGE_TYPE_REMAP,
-    SPR_TERRAIN_GRID_UNDERGROUND | COLOUR_BRIGHT_PURPLE << 19 | IMAGE_TYPE_REMAP,
-    SPR_TERRAIN_GRID_UNDERGROUND | COLOUR_BRIGHT_GREEN << 19 | IMAGE_TYPE_REMAP,
-    SPR_TERRAIN_SAND_RED_UNDERGROUND,
-    SPR_TERRAIN_SAND_UNDERGROUND,
-    SPR_TERRAIN_CHECKERBOARD_INVERTED_UNDERGROUND,
-};
-
-static constexpr const uint32_t dword_97B804[] =
-{
-    SPR_TERRAIN_PATTERN_GRASS,
-    SPR_TERRAIN_PATTERN_SAND_YELLOW,
-    SPR_TERRAIN_PATTERN_DIRT,
-    SPR_TERRAIN_PATTERN_ROCK,
-    SPR_TERRAIN_PATTERN_MARTIAN,
-    SPR_TERRAIN_PATTERN_GRASS,
-    SPR_TERRAIN_PATTERN_GRASS_CLUMPS,
-    SPR_TERRAIN_PATTERN_ICE,
-    SPR_TERRAIN_PATTERN_GRASS,
-    SPR_TERRAIN_PATTERN_GRASS,
-    SPR_TERRAIN_PATTERN_GRASS,
-    SPR_TERRAIN_PATTERN_GRASS,
-    SPR_TERRAIN_PATTERN_SAND_RED,
-    SPR_TERRAIN_PATTERN_SAND
-};
-
-enum
-{
-    FLAG_DONT_SMOOTHEN = (1 << 0),
-    FLAG_DONT_SMOOTHEN_SELF = (1 << 1),
-};
-
-static constexpr const uint8_t byte_97B83C[] =
-{
-    0,
-    0,
-    0,
-    FLAG_DONT_SMOOTHEN_SELF,
-    FLAG_DONT_SMOOTHEN_SELF,
-    FLAG_DONT_SMOOTHEN_SELF | FLAG_DONT_SMOOTHEN,
-    0,
-    0,
-    FLAG_DONT_SMOOTHEN_SELF | FLAG_DONT_SMOOTHEN,
-    FLAG_DONT_SMOOTHEN_SELF | FLAG_DONT_SMOOTHEN,
-    FLAG_DONT_SMOOTHEN_SELF | FLAG_DONT_SMOOTHEN,
-    FLAG_DONT_SMOOTHEN_SELF | FLAG_DONT_SMOOTHEN,
-    0,
-    0
-};
-
-static constexpr const uint8_t byte_97B84A[] =
-{
-    0, 1, 2, 3, 4, 14, 6, 7, 8, 9,
-    10, 11, 12, 13
-};
-
-static constexpr const uint32_t dword_97B858[][2] =
-{
-    { SPR_TERRAIN_GRASS_LENGTH_4_VARIANT_1, SPR_TERRAIN_GRASS_LENGTH_4_VARIANT_1_GRID },
-    { SPR_TERRAIN_GRASS_LENGTH_4_VARIANT_2, SPR_TERRAIN_GRASS_LENGTH_4_VARIANT_2_GRID },
-    { SPR_TERRAIN_GRASS_LENGTH_4_VARIANT_3, SPR_TERRAIN_GRASS_LENGTH_4_VARIANT_3_GRID },
-    { SPR_TERRAIN_GRASS_LENGTH_4_VARIANT_4, SPR_TERRAIN_GRASS_LENGTH_4_VARIANT_4_GRID },
-};
-
-static constexpr const uint32_t dword_97B878[][2] =
-{
-    { SPR_TERRAIN_GRASS_LENGTH_6_VARIANT_1, SPR_TERRAIN_GRASS_LENGTH_6_VARIANT_1_GRID },
-    { SPR_TERRAIN_GRASS_LENGTH_6_VARIANT_2, SPR_TERRAIN_GRASS_LENGTH_6_VARIANT_2_GRID },
-    { SPR_TERRAIN_GRASS_LENGTH_6_VARIANT_3, SPR_TERRAIN_GRASS_LENGTH_6_VARIANT_3_GRID },
-    { SPR_TERRAIN_GRASS_LENGTH_6_VARIANT_4, SPR_TERRAIN_GRASS_LENGTH_6_VARIANT_4_GRID },
-};
-
-static constexpr const uint32_t dword_97B898[][2] =
-{
-    { SPR_TERRAIN_GRASS_MOWED_90, SPR_TERRAIN_GRASS_MOWED_90_GRID },
-    { SPR_TERRAIN_GRASS_MOWED,    SPR_TERRAIN_GRASS_MOWED_GRID },
-    { SPR_TERRAIN_GRASS_MOWED_90, SPR_TERRAIN_GRASS_MOWED_90_GRID },
-    { SPR_TERRAIN_GRASS_MOWED,    SPR_TERRAIN_GRASS_MOWED_GRID }
 };
 
 struct tile_descriptor
@@ -428,14 +225,14 @@ struct tile_descriptor
 
 struct tile_surface_boundary_data
 {
-    int32_t       bit_1;
-    int32_t       bit_8;
-    int32_t       bit_4;
-    int32_t       bit_2;
-    uint32_t       image[5];
-    LocationXY8  offset;
-    LocationXY16 box_offset;
-    LocationXY16 box_size;
+    int32_t  bit_1;
+    int32_t  bit_8;
+    int32_t  bit_4;
+    int32_t  bit_2;
+    uint32_t image[5];
+    CoordsXY offset;
+    CoordsXY box_offset;
+    CoordsXY box_size;
 };
 
 static constexpr const tile_surface_boundary_data _tileSurfaceBoundaries[4] =
@@ -495,14 +292,133 @@ static constexpr const tile_surface_boundary_data _tileSurfaceBoundaries[4] =
 };
 // clang-format on
 
-static uint32_t get_edge_image(uint8_t index, uint8_t type)
+static const TerrainSurfaceObject* get_surface_object(size_t index)
 {
-    return _terrainEdgeSpriteIds[index][type];
+    TerrainSurfaceObject* result{};
+    auto& objMgr = OpenRCT2::GetContext()->GetObjectManager();
+    auto obj = objMgr.GetLoadedObject(ObjectType::TerrainSurface, index);
+    if (obj != nullptr)
+    {
+        return static_cast<TerrainSurfaceObject*>(obj);
+    }
+    return result;
 }
 
-static uint32_t get_tunnel_image(uint8_t index, uint8_t type)
+static uint32_t get_surface_image(
+    const paint_session* session, ObjectEntryIndex index, int32_t offset, uint8_t rotation, int32_t grassLength, bool grid,
+    bool underground)
 {
-    return _terrainEdgeTunnelSpriteIds[index][type];
+    // Provide fallback for RCT1 surfaces if the user does have RCT1 linked.
+    if (!is_csg_loaded() && index >= TERRAIN_RCT2_COUNT)
+    {
+        if (index == TERRAIN_ROOF_GREY)
+            index = TERRAIN_ROCK;
+        else
+            index = TERRAIN_DIRT;
+    }
+
+    auto image = static_cast<uint32_t>(SPR_NONE);
+    auto obj = get_surface_object(index);
+    if (obj != nullptr)
+    {
+        image = obj->GetImageId(
+            { session->MapPosition.x >> 5, session->MapPosition.y >> 5 }, grassLength, rotation, offset, grid, underground);
+        if (obj->Colour != 255)
+        {
+            image |= SPRITE_ID_PALETTE_COLOUR_1(obj->Colour);
+        }
+    }
+    return image;
+}
+
+static uint32_t get_surface_pattern(uint8_t index, int32_t offset)
+{
+    auto image = static_cast<uint32_t>(SPR_NONE);
+    auto obj = get_surface_object(index);
+    if (obj != nullptr)
+    {
+        image = obj->PatternBaseImageId + offset;
+        if (obj->Colour != 255)
+        {
+            image |= SPRITE_ID_PALETTE_COLOUR_1(obj->Colour);
+        }
+    }
+    return image;
+}
+
+static bool surface_should_smooth_self(uint8_t index)
+{
+    auto obj = get_surface_object(index);
+    if (obj != nullptr)
+    {
+        return obj->Flags & TERRAIN_SURFACE_FLAGS::SMOOTH_WITH_SELF;
+    }
+    return false;
+}
+
+static bool surface_should_smooth(uint8_t index)
+{
+    auto obj = get_surface_object(index);
+    if (obj != nullptr)
+    {
+        return obj->Flags & TERRAIN_SURFACE_FLAGS::SMOOTH_WITH_OTHER;
+    }
+    return false;
+}
+
+static uint32_t get_edge_image_with_offset(uint8_t index, uint32_t offset)
+{
+    uint32_t result = 0;
+    auto& objMgr = OpenRCT2::GetContext()->GetObjectManager();
+    auto obj = objMgr.GetLoadedObject(ObjectType::TerrainEdge, index);
+    if (obj != nullptr)
+    {
+        auto tobj = static_cast<TerrainEdgeObject*>(obj);
+        return tobj->BaseImageId + offset;
+    }
+    return result;
+}
+
+static uint32_t get_edge_image(uint8_t index, uint8_t type)
+{
+    static constexpr uint32_t offsets[] = {
+        0,
+        20,
+        10,
+        30,
+    };
+
+    uint32_t result = 0;
+    if (type < std::size(offsets))
+    {
+        result = get_edge_image_with_offset(index, offsets[type]);
+    }
+    return result;
+}
+
+static uint32_t get_tunnel_image(ObjectEntryIndex index, uint8_t type)
+{
+    static constexpr uint32_t offsets[TUNNEL_TYPE_COUNT] = { 36, 40, 44, 48, 52, 56, 60, 64, 68, 72, 76, 80,
+                                                             36, 48, 60, 72, 76, 80, 84, 88, 92, 96, 100 };
+
+    bool hasDoors = false;
+    auto& objMgr = OpenRCT2::GetContext()->GetObjectManager();
+    auto obj = objMgr.GetLoadedObject(ObjectType::TerrainEdge, index);
+    if (obj != nullptr)
+    {
+        auto tobj = static_cast<TerrainEdgeObject*>(obj);
+        hasDoors = tobj->HasDoors;
+    }
+
+    if (!hasDoors && type >= REGULAR_TUNNEL_TYPE_COUNT && type < std::size(offsets))
+        type = TUNNEL_0;
+
+    uint32_t result = 0;
+    if (type < std::size(offsets))
+    {
+        result = get_edge_image_with_offset(index, offsets[type]);
+    }
+    return result;
 }
 
 static uint8_t viewport_surface_paint_setup_get_relative_slope(const TileElement* tileElement, int32_t rotation)
@@ -595,55 +511,60 @@ static void viewport_surface_smoothen_edge(
         if (cl == dh)
             return;
 
-        if (byte_97B83C[self.terrain] & FLAG_DONT_SMOOTHEN_SELF)
+        if (!surface_should_smooth_self(self.terrain))
             return;
     }
     else
     {
-        if (byte_97B83C[self.terrain] & FLAG_DONT_SMOOTHEN)
+        if (!surface_should_smooth(self.terrain))
             return;
 
-        if (byte_97B83C[neighbour.terrain] & FLAG_DONT_SMOOTHEN)
+        if (!surface_should_smooth(neighbour.terrain))
             return;
     }
 
     const uint32_t image_id = maskImageBase + byte_97B444[self.slope];
 
-    if (paint_attach_to_previous_ps(session, image_id, 0, 0))
+    if (PaintAttachToPreviousPS(session, image_id, 0, 0))
     {
-        attached_paint_struct* out = session->UnkF1AD2C;
+        attached_paint_struct* out = session->LastAttachedPS;
         // set content and enable masking
-        out->colour_image_id = dword_97B804[neighbour.terrain] + cl;
+        out->colour_image_id = get_surface_pattern(neighbour.terrain, cl);
         out->flags |= PAINT_STRUCT_FLAG_IS_MASKED;
     }
 }
 
 static bool tile_is_inside_clip_view(const tile_descriptor& tile)
 {
-    Guard::ArgumentNotNull(tile.tile_element);
+    if (tile.tile_element == nullptr)
+        return false;
 
-    if (tile.tile_element->base_height > gClipHeight)
+    if (tile.tile_element->GetBaseZ() > gClipHeight * COORDS_Z_STEP)
         return false;
-    if (tile.tile_coords.x < gClipSelectionA.x || tile.tile_coords.x > gClipSelectionB.x)
+
+    auto coords = tile.tile_coords.ToCoordsXY();
+    if (coords.x < gClipSelectionA.x || coords.x > gClipSelectionB.x)
         return false;
-    if (tile.tile_coords.y < gClipSelectionA.y || tile.tile_coords.y > gClipSelectionB.y)
+    if (coords.y < gClipSelectionA.y || coords.y > gClipSelectionB.y)
         return false;
 
     return true;
 }
 
 static void viewport_surface_draw_tile_side_bottom(
-    paint_session* session, enum edge_t edge, uint8_t height, uint8_t edgeStyle, struct tile_descriptor self,
+    paint_session* session, enum edge_t edge, uint16_t height, uint8_t edgeStyle, struct tile_descriptor self,
     struct tile_descriptor neighbour, bool isWater)
 {
+    // From big Z to tiny Z
+    height /= COORDS_Z_PER_TINY_Z;
     int16_t cornerHeight1, neighbourCornerHeight1, cornerHeight2, neighbourCornerHeight2;
 
-    LocationXY8 offset = { 0, 0 };
-    LocationXY8 bounds = { 0, 0 };
-    LocationXY16 tunnelBounds = { 1, 1 };
-    LocationXY16 tunnelTopBoundBoxOffset = { 0, 0 };
+    CoordsXY offset = { 0, 0 };
+    CoordsXY bounds = { 0, 0 };
+    CoordsXY tunnelBounds = { 1, 1 };
+    CoordsXY tunnelTopBoundBoxOffset = { 0, 0 };
 
-    tunnel_entry* tunnelArray;
+    const tunnel_entry* tunnelArray;
     switch (edge)
     {
         case EDGE_BOTTOMLEFT:
@@ -680,7 +601,7 @@ static void viewport_surface_draw_tile_side_bottom(
             return;
     }
 
-    bool neighbourIsClippedAway = (gCurrentViewportFlags & VIEWPORT_FLAG_CLIP_VIEW) && !tile_is_inside_clip_view(neighbour);
+    bool neighbourIsClippedAway = (session->ViewFlags & VIEWPORT_FLAG_CLIP_VIEW) && !tile_is_inside_clip_view(neighbour);
 
     if (neighbour.tile_element == nullptr || neighbourIsClippedAway)
     {
@@ -689,9 +610,9 @@ static void viewport_surface_draw_tile_side_bottom(
         neighbourCornerHeight1 = MINIMUM_LAND_HEIGHT / 2;
     }
 
-    if (isWater)
+    if (isWater && neighbour.tile_element != nullptr)
     {
-        uint8_t waterHeight = neighbour.tile_element->AsSurface()->GetWaterHeight();
+        auto waterHeight = neighbour.tile_element->AsSurface()->GetWaterHeight() / (COORDS_Z_STEP * 2);
         if (waterHeight == height && !neighbourIsClippedAway)
         {
             // Don't draw the edge when the neighbour's water level is the same
@@ -712,7 +633,7 @@ static void viewport_surface_draw_tile_side_bottom(
         edgeStyle = TERRAIN_EDGE_ROCK;
 
     uint32_t base_image_id = get_edge_image(edgeStyle, 0);
-    if (gCurrentViewportFlags & VIEWPORT_FLAG_UNDERGROUND_INSIDE)
+    if (session->ViewFlags & VIEWPORT_FLAG_UNDERGROUND_INSIDE)
     {
         base_image_id = get_edge_image(edgeStyle, 1);
     }
@@ -736,7 +657,7 @@ static void viewport_surface_draw_tile_side_bottom(
         if (curHeight != cornerHeight1 && curHeight != cornerHeight2)
         {
             uint32_t image_id = base_image_id + image_offset;
-            sub_98196C(session, image_id, offset.x, offset.y, bounds.x, bounds.y, 15, curHeight * 16);
+            PaintAddImageAsParent(session, image_id, { offset, curHeight * COORDS_Z_PER_TINY_Z }, { bounds, 15 });
             curHeight++;
         }
     }
@@ -760,7 +681,7 @@ static void viewport_surface_draw_tile_side_bottom(
             }
 
             const uint32_t image_id = base_image_id + image_offset;
-            sub_98196C(session, image_id, offset.x, offset.y, bounds.x, bounds.y, 15, curHeight * 16);
+            PaintAddImageAsParent(session, image_id, { offset, curHeight * COORDS_Z_PER_TINY_Z }, { bounds, 15 });
 
             return;
         }
@@ -773,9 +694,9 @@ static void viewport_surface_draw_tile_side_bottom(
                 tunnelIndex++;
             }
 
-            if (isWater == true || curHeight != tunnelArray[tunnelIndex].height)
+            if (isWater || curHeight != tunnelArray[tunnelIndex].height)
             {
-                sub_98196C(session, base_image_id, offset.x, offset.y, bounds.x, bounds.y, 15, curHeight * 16);
+                PaintAddImageAsParent(session, base_image_id, { offset, curHeight * COORDS_Z_PER_TINY_Z }, { bounds, 15 });
 
                 curHeight++;
                 continue;
@@ -803,11 +724,11 @@ static void viewport_surface_draw_tile_side_bottom(
         }
 
         uint32_t image_id = get_tunnel_image(edgeStyle, tunnelType) + (edge == EDGE_BOTTOMRIGHT ? 2 : 0);
-        sub_98197C(
-            session, image_id, offset.x, offset.y, tunnelBounds.x, tunnelBounds.y, boundBoxLength - 1, zOffset, 0, 0,
-            boundBoxOffsetZ);
+        PaintAddImageAsParent(
+            session, image_id, { offset, zOffset }, { tunnelBounds.x, tunnelBounds.y, boundBoxLength - 1 },
+            { 0, 0, boundBoxOffsetZ });
 
-        boundBoxOffsetZ = curHeight * 16;
+        boundBoxOffsetZ = curHeight * COORDS_Z_PER_TINY_Z;
         boundBoxLength = _tunnelHeights[tunnelType][1] * 16;
         boundBoxOffsetZ += _boundBoxZOffsets[tunnelType];
         if (boundBoxOffsetZ == 0)
@@ -817,9 +738,10 @@ static void viewport_surface_draw_tile_side_bottom(
         }
 
         image_id = get_tunnel_image(edgeStyle, tunnelType) + (edge == EDGE_BOTTOMRIGHT ? 2 : 0) + 1;
-        sub_98197C(
-            session, image_id, offset.x, offset.y, tunnelBounds.x, tunnelBounds.y, boundBoxLength - 1, curHeight * 16,
-            tunnelTopBoundBoxOffset.x, tunnelTopBoundBoxOffset.y, boundBoxOffsetZ);
+        PaintAddImageAsParent(
+            session, image_id, { offset, curHeight * COORDS_Z_PER_TINY_Z },
+            { tunnelBounds.x, tunnelBounds.y, boundBoxLength - 1 },
+            { tunnelTopBoundBoxOffset.x, tunnelTopBoundBoxOffset.y, boundBoxOffsetZ });
 
         curHeight += _tunnelHeights[tunnelType][0];
         tunnelIndex++;
@@ -830,7 +752,7 @@ static void viewport_surface_draw_tile_side_bottom(
  *  rct2: 0x0065EB7D, 0x0065F0D8
  */
 static void viewport_surface_draw_land_side_bottom(
-    paint_session* session, enum edge_t edge, uint8_t height, uint8_t edgeStyle, struct tile_descriptor self,
+    paint_session* session, enum edge_t edge, uint16_t height, uint8_t edgeStyle, struct tile_descriptor self,
     struct tile_descriptor neighbour)
 {
     viewport_surface_draw_tile_side_bottom(session, edge, height, edgeStyle, self, neighbour, false);
@@ -840,43 +762,46 @@ static void viewport_surface_draw_land_side_bottom(
  *  rct2: 0x0065F8B9, 0x0065FE26
  */
 static void viewport_surface_draw_water_side_bottom(
-    paint_session* session, enum edge_t edge, uint8_t height, uint8_t edgeStyle, struct tile_descriptor self,
+    paint_session* session, enum edge_t edge, uint16_t height, uint8_t edgeStyle, struct tile_descriptor self,
     struct tile_descriptor neighbour)
 {
     viewport_surface_draw_tile_side_bottom(session, edge, height, edgeStyle, self, neighbour, true);
 }
 
 static void viewport_surface_draw_tile_side_top(
-    paint_session* session, enum edge_t edge, uint8_t height, uint8_t terrain, struct tile_descriptor self,
+    paint_session* session, enum edge_t edge, uint16_t height, uint8_t terrain, struct tile_descriptor self,
     struct tile_descriptor neighbour, bool isWater)
 {
+    // From big Z to tiny Z
+    height /= COORDS_Z_PER_TINY_Z;
+
     if (!is_csg_loaded() && terrain >= TERRAIN_EDGE_RCT2_COUNT)
         terrain = TERRAIN_EDGE_ROCK;
 
-    int16_t al, ah, cl, ch, dl = 0, waterHeight;
+    int16_t cornerHeight1, neighbourCornerHeight1, cornerHeight2, neighbourCornerHeight2;
 
-    sLocationXY8 offset = { 0, 0 };
-    sLocationXY8 bounds = { 0, 0 };
+    CoordsXY offset = { 0, 0 };
+    CoordsXY bounds = { 0, 0 };
 
     switch (edge)
     {
         case EDGE_TOPLEFT:
-            al = self.corner_heights.top;
-            cl = self.corner_heights.left;
+            cornerHeight1 = self.corner_heights.top;
+            cornerHeight2 = self.corner_heights.left;
 
-            ah = neighbour.corner_heights.right;
-            ch = neighbour.corner_heights.bottom;
+            neighbourCornerHeight1 = neighbour.corner_heights.right;
+            neighbourCornerHeight2 = neighbour.corner_heights.bottom;
 
             offset.y = -2;
             bounds.x = 30;
             break;
 
         case EDGE_TOPRIGHT:
-            al = self.corner_heights.top;
-            cl = self.corner_heights.right;
+            cornerHeight1 = self.corner_heights.top;
+            cornerHeight2 = self.corner_heights.right;
 
-            ah = neighbour.corner_heights.left;
-            ch = neighbour.corner_heights.bottom;
+            neighbourCornerHeight1 = neighbour.corner_heights.left;
+            neighbourCornerHeight2 = neighbour.corner_heights.bottom;
 
             offset.x = -2;
             bounds.y = 30;
@@ -886,32 +811,28 @@ static void viewport_surface_draw_tile_side_top(
             return;
     }
 
-    if (isWater == false)
-        dl = height;
-
     // save ecx
     if (neighbour.tile_element == nullptr)
     {
-        ah = 1;
-        ch = 1;
+        neighbourCornerHeight1 = 1;
+        neighbourCornerHeight2 = 1;
     }
     else
     {
         if (isWater)
         {
-            waterHeight = neighbour.tile_element->AsSurface()->GetWaterHeight();
-            if (dl == waterHeight)
+            auto waterHeight = neighbour.tile_element->AsSurface()->GetWaterHeight() / (COORDS_Z_STEP * 2);
+            if (height == waterHeight)
             {
                 return;
             }
 
-            al = dl;
-            cl = dl;
+            cornerHeight1 = height;
+            cornerHeight2 = height;
         }
     }
 
-    // al + cl probably are self tile corners, while ah/ch are neighbour tile corners
-    if (al <= ah && cl <= ch)
+    if (cornerHeight1 <= neighbourCornerHeight1 && cornerHeight2 <= neighbourCornerHeight2)
     {
         return;
     }
@@ -921,7 +842,7 @@ static void viewport_surface_draw_tile_side_top(
     if (isWater)
     {
         base_image_id = get_edge_image(terrain, 2); // var_08
-        if (gCurrentViewportFlags & VIEWPORT_FLAG_UNDERGROUND_INSIDE)
+        if (session->ViewFlags & VIEWPORT_FLAG_UNDERGROUND_INSIDE)
         {
             base_image_id = get_edge_image(terrain, 1); // var_04
         }
@@ -929,36 +850,37 @@ static void viewport_surface_draw_tile_side_top(
     }
     else
     {
-        if (!(gCurrentViewportFlags & VIEWPORT_FLAG_UNDERGROUND_INSIDE))
+        if (!(session->ViewFlags & VIEWPORT_FLAG_UNDERGROUND_INSIDE))
         {
-            const uint8_t incline = (cl - al) + 1;
+            const uint8_t incline = (cornerHeight2 - cornerHeight1) + 1;
             const uint32_t image_id = get_edge_image(terrain, 3) + (edge == EDGE_TOPLEFT ? 3 : 0) + incline; // var_c;
-            const int16_t y = (dl - al) * 16;
-            paint_attach_to_previous_ps(session, image_id, 0, y);
+            const int16_t y = (height - cornerHeight1) * COORDS_Z_PER_TINY_Z;
+            PaintAttachToPreviousPS(session, image_id, 0, y);
             return;
         }
         base_image_id = get_edge_image(terrain, 1) + (edge == EDGE_TOPLEFT ? 5 : 0); // var_04
     }
 
-    uint8_t cur_height = std::min(ch, ah);
-    if (ch != ah)
+    uint8_t cur_height = std::min(neighbourCornerHeight2, neighbourCornerHeight1);
+    if (neighbourCornerHeight2 != neighbourCornerHeight1)
     {
         // neighbour tile corners aren't level
         uint32_t image_offset = 3;
-        if (ch > ah)
+        if (neighbourCornerHeight2 > neighbourCornerHeight1)
         {
             image_offset = 4;
         }
 
-        if (cur_height != al && cur_height != cl)
+        if (cur_height != cornerHeight1 && cur_height != cornerHeight2)
         {
             const uint32_t image_id = base_image_id + image_offset;
-            sub_98196C(session, image_id, offset.x, offset.y, bounds.x, bounds.y, 15, cur_height * 16);
+            PaintAddImageAsParent(
+                session, image_id, { offset.x, offset.y, cur_height * COORDS_Z_PER_TINY_Z }, { bounds.x, bounds.y, 15 });
             cur_height++;
         }
     }
 
-    ah = cl;
+    neighbourCornerHeight1 = cornerHeight2;
 
     if (isWater)
     {
@@ -966,32 +888,32 @@ static void viewport_surface_draw_tile_side_top(
         offset.y = 0;
     }
 
-    while (cur_height < al && cur_height < ah)
+    while (cur_height < cornerHeight1 && cur_height < neighbourCornerHeight1)
     {
-        sub_98196C(session, base_image_id, offset.x, offset.y, bounds.x, bounds.y, 15, cur_height * 16);
+        PaintAddImageAsParent(session, base_image_id, { offset, cur_height * COORDS_Z_PER_TINY_Z }, { bounds, 15 });
         cur_height++;
     }
 
     uint32_t image_offset = 1;
-    if (cur_height >= al)
+    if (cur_height >= cornerHeight1)
     {
         image_offset = 2;
 
-        if (cur_height >= ah)
+        if (cur_height >= neighbourCornerHeight1)
         {
             return;
         }
     }
 
     const uint32_t image_id = base_image_id + image_offset;
-    sub_98196C(session, image_id, offset.x, offset.y, bounds.x, bounds.y, 15, cur_height * 16);
+    PaintAddImageAsParent(session, image_id, { offset, cur_height * COORDS_Z_PER_TINY_Z }, { bounds, 15 });
 }
 
 /**
  *  rct2: 0x0065F63B, 0x0065F77D
  */
 static void viewport_surface_draw_land_side_top(
-    paint_session* session, enum edge_t edge, uint8_t height, uint8_t terrain, struct tile_descriptor self,
+    paint_session* session, enum edge_t edge, uint16_t height, uint8_t terrain, struct tile_descriptor self,
     struct tile_descriptor neighbour)
 {
     viewport_surface_draw_tile_side_top(session, edge, height, terrain, self, neighbour, false);
@@ -1001,10 +923,38 @@ static void viewport_surface_draw_land_side_top(
  *  rct2: 0x0066039B, 0x006604F1
  */
 static void viewport_surface_draw_water_side_top(
-    paint_session* session, enum edge_t edge, uint8_t height, uint8_t terrain, struct tile_descriptor self,
+    paint_session* session, enum edge_t edge, uint16_t height, uint8_t terrain, struct tile_descriptor self,
     struct tile_descriptor neighbour)
 {
     viewport_surface_draw_tile_side_top(session, edge, height, terrain, self, neighbour, true);
+}
+
+static std::pair<int32_t, int32_t> surface_get_height_above_water(
+    const SurfaceElement& surfaceElement, const int32_t height, const int32_t surfaceShape)
+{
+    int32_t localSurfaceShape = surfaceShape;
+    int32_t localHeight = height;
+
+    if (surfaceElement.GetWaterHeight() > 0)
+    {
+        int32_t waterHeight = surfaceElement.GetWaterHeight();
+        if (waterHeight > height)
+        {
+            localHeight += LAND_HEIGHT_STEP;
+
+            if (waterHeight != localHeight || !(localSurfaceShape & TILE_ELEMENT_SURFACE_DIAGONAL_FLAG))
+            {
+                localHeight = waterHeight;
+                localSurfaceShape = TILE_ELEMENT_SLOPE_FLAT;
+            }
+            else
+            {
+                localSurfaceShape = ror4(surfaceShape ^ TILE_ELEMENT_SURFACE_RAISED_CORNERS_MASK, 2);
+            }
+        }
+    }
+
+    return { localHeight, localSurfaceShape };
 }
 
 /**
@@ -1012,28 +962,28 @@ static void viewport_surface_draw_water_side_top(
  */
 void surface_paint(paint_session* session, uint8_t direction, uint16_t height, const TileElement* tileElement)
 {
-    rct_drawpixelinfo* dpi = session->DPI;
-    session->InteractionType = VIEWPORT_INTERACTION_ITEM_TERRAIN;
+    rct_drawpixelinfo* dpi = &session->DPI;
+    session->InteractionType = ViewportInteractionItem::Terrain;
     session->DidPassSurface = true;
     session->SurfaceElement = tileElement;
 
-    const uint16_t zoomLevel = dpi->zoom_level;
+    const auto zoomLevel = dpi->zoom_level;
     const uint8_t rotation = session->CurrentRotation;
-    const uint32_t terrain_type = tileElement->AsSurface()->GetSurfaceStyle();
+    const auto terrain_type = tileElement->AsSurface()->GetSurfaceStyle();
     const uint8_t surfaceShape = viewport_surface_paint_setup_get_relative_slope(tileElement, rotation);
-    const LocationXY16& base = session->SpritePosition;
+    const CoordsXY& base = session->SpritePosition;
     const corner_height& cornerHeights = corner_heights[surfaceShape];
 
     tile_descriptor selfDescriptor = {
-        { base.x / 32, base.y / 32 },
+        TileCoordsXY(base),
         tileElement,
-        (uint8_t)terrain_type,
+        static_cast<uint8_t>(terrain_type),
         surfaceShape,
         {
-            (uint8_t)(height / 16 + cornerHeights.top),
-            (uint8_t)(height / 16 + cornerHeights.right),
-            (uint8_t)(height / 16 + cornerHeights.bottom),
-            (uint8_t)(height / 16 + cornerHeights.left),
+            static_cast<uint8_t>(height / 16 + cornerHeights.top),
+            static_cast<uint8_t>(height / 16 + cornerHeights.right),
+            static_cast<uint8_t>(height / 16 + cornerHeights.bottom),
+            static_cast<uint8_t>(height / 16 + cornerHeights.left),
         },
     };
 
@@ -1042,33 +992,31 @@ void surface_paint(paint_session* session, uint8_t direction, uint16_t height, c
 
     for (int32_t i = 0; i < 4; i++)
     {
-        const LocationXY16& offset = viewport_surface_paint_data[i][rotation];
-        const CoordsXY position = {
-            (int32_t)(base.x + offset.x),
-            (int32_t)(base.y + offset.y),
-        };
+        const CoordsXY& offset = viewport_surface_paint_data[i][rotation];
+        const CoordsXY position = base + offset;
 
         tile_descriptor& descriptor = tileDescriptors[i + 1];
 
         descriptor.tile_element = nullptr;
-        if (position.x > 0x2000 || position.y > 0x2000)
+        if (!map_is_location_valid(position))
         {
             continue;
         }
 
-        TileElement* surfaceElement = map_get_surface_element_at(position);
+        auto surfaceElement = map_get_surface_element_at(position);
         if (surfaceElement == nullptr)
         {
             continue;
         }
 
-        const uint32_t surfaceSlope = viewport_surface_paint_setup_get_relative_slope(surfaceElement, rotation);
-        const uint8_t baseHeight = surfaceElement->base_height / 2;
+        const uint32_t surfaceSlope = viewport_surface_paint_setup_get_relative_slope(
+            reinterpret_cast<TileElement*>(surfaceElement), rotation);
+        const uint8_t baseHeight = surfaceElement->GetBaseZ() / 16;
         const corner_height& ch = corner_heights[surfaceSlope];
 
-        descriptor.tile_coords = { position.x / 32, position.y / 32 };
-        descriptor.tile_element = surfaceElement;
-        descriptor.terrain = surfaceElement->AsSurface()->GetSurfaceStyle();
+        descriptor.tile_coords = TileCoordsXY{ position };
+        descriptor.tile_element = reinterpret_cast<TileElement*>(surfaceElement);
+        descriptor.terrain = surfaceElement->GetSurfaceStyle();
         descriptor.slope = surfaceSlope;
         descriptor.corner_heights.top = baseHeight + ch.top;
         descriptor.corner_heights.right = baseHeight + ch.right;
@@ -1076,109 +1024,58 @@ void surface_paint(paint_session* session, uint8_t direction, uint16_t height, c
         descriptor.corner_heights.left = baseHeight + ch.left;
     }
 
-    if ((gCurrentViewportFlags & VIEWPORT_FLAG_LAND_HEIGHTS) && (zoomLevel == 0))
+    if (PaintShouldShowHeightMarkers(session, VIEWPORT_FLAG_LAND_HEIGHTS))
     {
         const int16_t x = session->MapPosition.x;
         const int16_t y = session->MapPosition.y;
 
-        int32_t dx = tile_element_height(x + 16, y + 16) & 0xFFFF;
+        int32_t dx = tile_element_height({ x + 16, y + 16 });
         dx += 3;
 
         int32_t image_id = (SPR_HEIGHT_MARKER_BASE + dx / 16) | 0x20780000;
         image_id += get_height_marker_offset();
         image_id -= gMapBaseZ;
 
-        sub_98196C(session, image_id, 16, 16, 1, 1, 0, height);
+        PaintAddImageAsParent(session, image_id, 16, 16, 1, 1, 0, height);
     }
 
     bool has_surface = false;
-    if (session->VerticalTunnelHeight * 16 == height)
+    if (session->VerticalTunnelHeight * COORDS_Z_PER_TINY_Z == height)
     {
         // Vertical tunnels
-        sub_98197C(session, 1575, 0, 0, 1, 30, 39, height, -2, 1, height - 40);
-        sub_98197C(session, 1576, 0, 0, 30, 1, 0, height, 1, 31, height);
-        sub_98197C(session, 1577, 0, 0, 1, 30, 0, height, 31, 1, height);
-        sub_98197C(session, 1578, 0, 0, 30, 1, 39, height, 1, -2, height - 40);
+        PaintAddImageAsParent(session, 1575, { 0, 0, height }, { 1, 30, 39 }, { -2, 1, height - 40 });
+        PaintAddImageAsParent(session, 1576, { 0, 0, height }, { 30, 1, 0 }, { 1, 31, height });
+        PaintAddImageAsParent(session, 1577, { 0, 0, height }, { 1, 30, 0 }, { 31, 1, height });
+        PaintAddImageAsParent(session, 1578, { 0, 0, height }, { 30, 1, 39 }, { 1, -2, height - 40 });
     }
     else
     {
-        const bool showGridlines = (gCurrentViewportFlags & VIEWPORT_FLAG_GRIDLINES);
+        const bool showGridlines = (session->ViewFlags & VIEWPORT_FLAG_GRIDLINES);
 
-        int32_t branch = -1;
-        if (tileElement->AsSurface()->GetSurfaceStyle() == TERRAIN_GRASS)
+        auto grassLength = -1;
+        if (zoomLevel <= 0)
         {
-            if (tileElement->GetDirection() == 0)
+            if ((session->ViewFlags & (VIEWPORT_FLAG_HIDE_BASE | VIEWPORT_FLAG_UNDERGROUND_INSIDE)) == 0)
             {
-                if (zoomLevel == 0)
-                {
-                    if ((gCurrentViewportFlags & (VIEWPORT_FLAG_HIDE_BASE | VIEWPORT_FLAG_UNDERGROUND_INSIDE)) == 0)
-                    {
-                        branch = tileElement->AsSurface()->GetGrassLength() & 0x7;
-                    }
-                }
+                grassLength = tileElement->AsSurface()->GetGrassLength() & 0x7;
             }
         }
 
-        assert(surfaceShape < Util::CountOf(byte_97B444));
+        assert(surfaceShape < std::size(byte_97B444));
         const uint8_t image_offset = byte_97B444[surfaceShape];
-        int32_t image_id;
-        uint32_t ebp = terrain_type;
 
-        switch (branch)
+        auto imageId = get_surface_image(session, terrain_type, image_offset, rotation, grassLength, showGridlines, false);
+        if (gScreenFlags & (SCREEN_FLAGS_TRACK_DESIGNER | SCREEN_FLAGS_TRACK_MANAGER))
         {
-            case 0:
-                // loc_660C90
-                image_id = dword_97B898[rotation][showGridlines ? 1 : 0] + image_offset;
-                break;
-
-            case 1:
-            case 2:
-            case 3:
-            default:
-                // loc_660C9F
-                if (rotation & 1)
-                {
-                    assert(ebp < Util::CountOf(byte_97B84A));
-                    ebp = byte_97B84A[ebp];
-                }
-                assert(ebp < Util::CountOf(dword_97B750));
-                image_id = dword_97B750[ebp][showGridlines ? 1 : 0] + image_offset;
-
-                if (gScreenFlags & (SCREEN_FLAGS_TRACK_DESIGNER | SCREEN_FLAGS_TRACK_MANAGER))
-                {
-                    image_id = SPR_TERRAIN_TRACK_DESIGNER;
-                }
-
-                if (gCurrentViewportFlags & (VIEWPORT_FLAG_UNDERGROUND_INSIDE | VIEWPORT_FLAG_HIDE_BASE))
-                {
-                    image_id &= 0xDC07FFFF; // remove colour
-                    image_id |= 0x41880000;
-                }
-                break;
-
-            case 4:
-            case 5:
-                // loc_660C44
-            case 6:
-                // loc_660C6A
-                {
-                    const int16_t x = session->MapPosition.x & 0x20;
-                    const int16_t y = session->MapPosition.y & 0x20;
-                    const int32_t index = (y | (x << 1)) >> 5;
-
-                    if (branch == 6)
-                    {
-                        image_id = dword_97B878[index][showGridlines ? 1 : 0] + image_offset;
-                    }
-                    else
-                    {
-                        image_id = dword_97B858[index][showGridlines ? 1 : 0] + image_offset;
-                    }
-                }
-                break;
+            imageId = SPR_TERRAIN_TRACK_DESIGNER;
+        }
+        if (session->ViewFlags & (VIEWPORT_FLAG_UNDERGROUND_INSIDE | VIEWPORT_FLAG_HIDE_BASE))
+        {
+            imageId &= 0xDC07FFFF; // remove colour
+            imageId |= 0x41880000;
         }
 
-        sub_98196C(session, image_id, 0, 0, 32, 32, -1, height);
+        PaintAddImageAsParent(session, imageId, { 0, 0, height }, { 32, 32, -1 });
         has_surface = true;
     }
 
@@ -1196,75 +1093,86 @@ void surface_paint(paint_session* session, uint8_t direction, uint16_t height, c
 
         if (!is_staff_list)
         {
-            rct_peep* staff = GET_PEEP(staffIndex);
-            if (!staff_is_patrol_area_set(staff->staff_id, x, y))
+            Staff* staff = GetEntity<Staff>(staffIndex);
+            if (staff == nullptr)
             {
-                patrolColour = COLOUR_GREY;
+                log_error("Invalid staff index for draw patrol areas!");
             }
-            staffType = staff->staff_type;
+            else
+            {
+                if (!staff->IsPatrolAreaSet({ x, y }))
+                {
+                    patrolColour = COLOUR_GREY;
+                }
+                staffType = static_cast<uint8_t>(staff->AssignedStaffType);
+            }
         }
 
-        if (staff_is_patrol_area_set(200 + staffType, x, y))
+        if (staff_is_patrol_area_set_for_type(static_cast<StaffType>(staffType), session->MapPosition))
         {
-            assert(surfaceShape < Util::CountOf(byte_97B444));
+            assert(surfaceShape < std::size(byte_97B444));
 
-            image_id |= SPR_TERRAIN_SELECTION_PATROL_AREA + byte_97B444[surfaceShape];
+            auto [local_height, local_surfaceShape] = surface_get_height_above_water(
+                *tileElement->AsSurface(), height, surfaceShape);
+            image_id |= SPR_TERRAIN_SELECTION_PATROL_AREA + byte_97B444[local_surfaceShape];
             image_id |= patrolColour << 19;
-            paint_attach_to_previous_ps(session, image_id, 0, 0);
+
+            paint_struct* backup = session->LastPS;
+            PaintAddImageAsParent(session, image_id, { 0, 0, local_height }, { 32, 32, 1 });
+            session->LastPS = backup;
         }
     }
 
     // Draw Peep Spawns
     if (((gScreenFlags & SCREEN_FLAGS_SCENARIO_EDITOR) || gCheatsSandboxMode)
-        && gCurrentViewportFlags & VIEWPORT_FLAG_LAND_OWNERSHIP)
+        && session->ViewFlags & VIEWPORT_FLAG_LAND_OWNERSHIP)
     {
-        const LocationXY16& pos = session->MapPosition;
+        const CoordsXY& pos = session->MapPosition;
         for (auto& spawn : gPeepSpawns)
         {
             if ((spawn.x & 0xFFE0) == pos.x && (spawn.y & 0xFFE0) == pos.y)
             {
-                sub_98196C(session, SPR_TERRAIN_SELECTION_SQUARE_SIMPLE, 0, 0, 32, 32, 16, spawn.z);
+                PaintAddImageAsParent(session, SPR_TERRAIN_SELECTION_SQUARE_SIMPLE, 0, 0, 32, 32, 16, spawn.z);
 
-                const int32_t offset = ((spawn.direction ^ 2) + rotation) & 3;
+                const int32_t offset = (direction_reverse(spawn.direction) + rotation) & 3;
                 const uint32_t image_id = (PEEP_SPAWN_ARROW_0 + offset) | 0x20380000;
-                sub_98196C(session, image_id, 0, 0, 32, 32, 19, spawn.z);
+                PaintAddImageAsParent(session, image_id, { 0, 0, spawn.z }, { 32, 32, 19 });
             }
         }
     }
 
-    if (gCurrentViewportFlags & VIEWPORT_FLAG_LAND_OWNERSHIP)
+    if (session->ViewFlags & VIEWPORT_FLAG_LAND_OWNERSHIP)
     {
         // loc_660E9A:
         if (tileElement->AsSurface()->GetOwnership() & OWNERSHIP_OWNED)
         {
-            assert(surfaceShape < Util::CountOf(byte_97B444));
-            paint_attach_to_previous_ps(session, SPR_TERRAIN_SELECTION_SQUARE + byte_97B444[surfaceShape], 0, 0);
+            assert(surfaceShape < std::size(byte_97B444));
+            PaintAttachToPreviousPS(session, SPR_TERRAIN_SELECTION_SQUARE + byte_97B444[surfaceShape], 0, 0);
         }
         else if (tileElement->AsSurface()->GetOwnership() & OWNERSHIP_AVAILABLE)
         {
-            const LocationXY16& pos = session->MapPosition;
-            const int32_t height2 = (tile_element_height(pos.x + 16, pos.y + 16) & 0xFFFF) + 3;
-            paint_struct* backup = session->UnkF1AD28;
-            sub_98196C(session, SPR_LAND_OWNERSHIP_AVAILABLE, 16, 16, 1, 1, 0, height2);
-            session->UnkF1AD28 = backup;
+            const CoordsXY& pos = session->MapPosition;
+            const int32_t height2 = (tile_element_height({ pos.x + 16, pos.y + 16 })) + 3;
+            paint_struct* backup = session->LastPS;
+            PaintAddImageAsParent(session, SPR_LAND_OWNERSHIP_AVAILABLE, { 16, 16, height2 }, { 1, 1, 0 });
+            session->LastPS = backup;
         }
     }
 
-    if (gCurrentViewportFlags & VIEWPORT_FLAG_CONSTRUCTION_RIGHTS
-        && !(tileElement->AsSurface()->GetOwnership() & OWNERSHIP_OWNED))
+    if (session->ViewFlags & VIEWPORT_FLAG_CONSTRUCTION_RIGHTS && !(tileElement->AsSurface()->GetOwnership() & OWNERSHIP_OWNED))
     {
         if (tileElement->AsSurface()->GetOwnership() & OWNERSHIP_CONSTRUCTION_RIGHTS_OWNED)
         {
-            assert(surfaceShape < Util::CountOf(byte_97B444));
-            paint_attach_to_previous_ps(session, SPR_TERRAIN_SELECTION_DOTTED + byte_97B444[surfaceShape], 0, 0);
+            assert(surfaceShape < std::size(byte_97B444));
+            PaintAttachToPreviousPS(session, SPR_TERRAIN_SELECTION_DOTTED + byte_97B444[surfaceShape], 0, 0);
         }
         else if (tileElement->AsSurface()->GetOwnership() & OWNERSHIP_CONSTRUCTION_RIGHTS_AVAILABLE)
         {
-            const LocationXY16& pos = session->MapPosition;
-            const int32_t height2 = tile_element_height(pos.x + 16, pos.y + 16) & 0xFFFF;
-            paint_struct* backup = session->UnkF1AD28;
-            sub_98196C(session, SPR_LAND_CONSTRUCTION_RIGHTS_AVAILABLE, 16, 16, 1, 1, 0, height2 + 3);
-            session->UnkF1AD28 = backup;
+            const CoordsXY& pos = session->MapPosition;
+            const int32_t height2 = tile_element_height({ pos.x + 16, pos.y + 16 });
+            paint_struct* backup = session->LastPS;
+            PaintAddImageAsParent(session, SPR_LAND_CONSTRUCTION_RIGHTS_AVAILABLE, { 16, 16, height2 + 3 }, { 1, 1, 0 });
+            session->LastPS = backup;
         }
     }
 
@@ -1275,7 +1183,7 @@ void surface_paint(paint_session* session, uint8_t direction, uint16_t height, c
     if (gMapSelectFlags & MAP_SELECT_FLAG_ENABLE)
     {
         // loc_660FB8:
-        const LocationXY16& pos = session->MapPosition;
+        const CoordsXY& pos = session->MapPosition;
         if (pos.x >= gMapSelectPositionA.x && pos.x <= gMapSelectPositionB.x && pos.y >= gMapSelectPositionA.y
             && pos.y <= gMapSelectPositionB.y)
         {
@@ -1286,7 +1194,7 @@ void surface_paint(paint_session* session, uint8_t direction, uint16_t height, c
                 // loc_661089:
                 const uint32_t eax = ((((mapSelectionType - 9) + rotation) & 3) + 0x21) << 19;
                 const uint32_t image_id = (SPR_TERRAIN_SELECTION_EDGE + byte_97B444[surfaceShape]) | eax | IMAGE_TYPE_REMAP;
-                paint_attach_to_previous_ps(session, image_id, 0, 0);
+                PaintAttachToPreviousPS(session, image_id, 0, 0);
             }
             else if (mapSelectionType >= MAP_SELECT_TYPE_QUARTER_0)
             {
@@ -1294,7 +1202,7 @@ void surface_paint(paint_session* session, uint8_t direction, uint16_t height, c
                 // Selection split into four quarter segments
                 const uint32_t eax = ((((mapSelectionType - MAP_SELECT_TYPE_QUARTER_0) + rotation) & 3) + 0x27) << 19;
                 const uint32_t image_id = (SPR_TERRAIN_SELECTION_QUARTER + byte_97B444[surfaceShape]) | eax | IMAGE_TYPE_REMAP;
-                paint_attach_to_previous_ps(session, image_id, 0, 0);
+                PaintAttachToPreviousPS(session, image_id, 0, 0);
             }
             else if (mapSelectionType <= MAP_SELECT_TYPE_FULL)
             {
@@ -1307,52 +1215,30 @@ void surface_paint(paint_session* session, uint8_t direction, uint16_t height, c
 
                 eax = (eax + 0x21) << 19;
                 const uint32_t image_id = (SPR_TERRAIN_SELECTION_CORNER + byte_97B444[surfaceShape]) | eax | IMAGE_TYPE_REMAP;
-                paint_attach_to_previous_ps(session, image_id, 0, 0);
+                PaintAttachToPreviousPS(session, image_id, 0, 0);
             }
             else
             {
-                int32_t local_surfaceShape = surfaceShape;
-                int32_t local_height = height;
-                // Water tool
-                if (tileElement->AsSurface()->GetWaterHeight() > 0)
-                {
-                    int32_t waterHeight = tileElement->AsSurface()->GetWaterHeight() * 16;
-                    if (waterHeight > height)
-                    {
-                        local_height += 16;
-
-                        if (waterHeight != local_height || !(local_surfaceShape & 0x10))
-                        {
-                            local_height = waterHeight;
-                            local_surfaceShape = 0;
-                        }
-                        else
-                        {
-                            int16_t bl, bh;
-
-                            bl = (surfaceShape ^ 0xF) << 2;
-                            bh = bl >> 4;
-                            local_surfaceShape = (bh & 0x3) | (bl & 0xC);
-                        }
-                    }
-                }
+                // The water tool should draw its grid _on_ the water, rather than on the surface under water.
+                auto [local_height, local_surfaceShape] = surface_get_height_above_water(
+                    *tileElement->AsSurface(), height, surfaceShape);
 
                 const int32_t image_id = (SPR_TERRAIN_SELECTION_CORNER + byte_97B444[local_surfaceShape]) | 0x21300000;
 
-                paint_struct* backup = session->UnkF1AD28;
-                sub_98196C(session, image_id, 0, 0, 32, 32, 1, local_height);
-                session->UnkF1AD28 = backup;
+                paint_struct* backup = session->LastPS;
+                PaintAddImageAsParent(session, image_id, { 0, 0, local_height }, { 32, 32, 1 });
+                session->LastPS = backup;
             }
         }
     }
 
     if (gMapSelectFlags & MAP_SELECT_FLAG_ENABLE_CONSTRUCT)
     {
-        const LocationXY16& pos = session->MapPosition;
+        const CoordsXY& pos = session->MapPosition;
 
-        for (const LocationXY16* tile = gMapSelectionTiles; tile->x != -1; tile++)
+        for (const auto& tile : gMapSelectionTiles)
         {
-            if (tile->x != pos.x || tile->y != pos.y)
+            if (tile.x != pos.x || tile.y != pos.y)
             {
                 continue;
             }
@@ -1364,13 +1250,13 @@ void surface_paint(paint_session* session, uint8_t direction, uint16_t height, c
             }
 
             const uint32_t image_id = (SPR_TERRAIN_SELECTION_CORNER + byte_97B444[surfaceShape]) | colours | IMAGE_TYPE_REMAP;
-            paint_attach_to_previous_ps(session, image_id, 0, 0);
+            PaintAttachToPreviousPS(session, image_id, 0, 0);
             break;
         }
     }
 
-    if (zoomLevel == 0 && has_surface && !(gCurrentViewportFlags & VIEWPORT_FLAG_UNDERGROUND_INSIDE)
-        && !(gCurrentViewportFlags & VIEWPORT_FLAG_HIDE_BASE) && gConfigGeneral.landscape_smoothing)
+    if (zoomLevel <= 0 && has_surface && !(session->ViewFlags & VIEWPORT_FLAG_UNDERGROUND_INSIDE)
+        && !(session->ViewFlags & VIEWPORT_FLAG_HIDE_BASE) && gConfigGeneral.landscape_smoothing)
     {
         viewport_surface_smoothen_edge(session, EDGE_TOPLEFT, tileDescriptors[0], tileDescriptors[3]);
         viewport_surface_smoothen_edge(session, EDGE_TOPRIGHT, tileDescriptors[0], tileDescriptors[4]);
@@ -1378,103 +1264,86 @@ void surface_paint(paint_session* session, uint8_t direction, uint16_t height, c
         viewport_surface_smoothen_edge(session, EDGE_BOTTOMRIGHT, tileDescriptors[0], tileDescriptors[2]);
     }
 
-    if ((gCurrentViewportFlags & VIEWPORT_FLAG_UNDERGROUND_INSIDE) && !(gCurrentViewportFlags & VIEWPORT_FLAG_HIDE_BASE)
+    if ((session->ViewFlags & VIEWPORT_FLAG_UNDERGROUND_INSIDE) && !(session->ViewFlags & VIEWPORT_FLAG_HIDE_BASE)
         && !(gScreenFlags & (SCREEN_FLAGS_TRACK_DESIGNER | SCREEN_FLAGS_TRACK_MANAGER)))
     {
         const uint8_t image_offset = byte_97B444[surfaceShape];
-        uint32_t base_image = terrain_type;
-        if (rotation & 1)
-        {
-            base_image = byte_97B84A[terrain_type];
-        }
-        const uint32_t image_id = dword_97B7C8[base_image] + image_offset;
-        paint_attach_to_previous_ps(session, image_id, 0, 0);
+        const uint32_t image_id = get_surface_image(session, terrain_type, image_offset, rotation, 1, false, true);
+        PaintAttachToPreviousPS(session, image_id, 0, 0);
     }
 
-    if (!(gCurrentViewportFlags & VIEWPORT_FLAG_HIDE_VERTICAL))
+    if (!(session->ViewFlags & VIEWPORT_FLAG_HIDE_VERTICAL))
     {
-        const uint32_t edgeStyle = tileElement->AsSurface()->GetEdgeStyle();
-        if (edgeStyle >= TERRAIN_EDGE_COUNT)
+        const auto edgeStyle = tileElement->AsSurface()->GetEdgeStyle();
+        if (static_cast<int32_t>(edgeStyle) >= object_entry_group_counts[EnumValue(ObjectType::TerrainEdge)])
         {
             log_verbose("edgeStyle: %d", edgeStyle);
         }
 
-        tunnel_entry backupLeftTunnels[TUNNEL_MAX_COUNT];
-        tunnel_entry backupRightTunnels[TUNNEL_MAX_COUNT];
-
-        memcpy(backupLeftTunnels, session->LeftTunnels, sizeof(tunnel_entry) * TUNNEL_MAX_COUNT);
-        memcpy(backupRightTunnels, session->RightTunnels, sizeof(tunnel_entry) * TUNNEL_MAX_COUNT);
-
-        viewport_surface_draw_land_side_top(
-            session, EDGE_TOPLEFT, height / 16, edgeStyle, tileDescriptors[0], tileDescriptors[3]);
-        viewport_surface_draw_land_side_top(
-            session, EDGE_TOPRIGHT, height / 16, edgeStyle, tileDescriptors[0], tileDescriptors[4]);
+        viewport_surface_draw_land_side_top(session, EDGE_TOPLEFT, height, edgeStyle, tileDescriptors[0], tileDescriptors[3]);
+        viewport_surface_draw_land_side_top(session, EDGE_TOPRIGHT, height, edgeStyle, tileDescriptors[0], tileDescriptors[4]);
         viewport_surface_draw_land_side_bottom(
-            session, EDGE_BOTTOMLEFT, height / 16, edgeStyle, tileDescriptors[0], tileDescriptors[1]);
+            session, EDGE_BOTTOMLEFT, height, edgeStyle, tileDescriptors[0], tileDescriptors[1]);
         viewport_surface_draw_land_side_bottom(
-            session, EDGE_BOTTOMRIGHT, height / 16, edgeStyle, tileDescriptors[0], tileDescriptors[2]);
-
-        memcpy(session->LeftTunnels, backupLeftTunnels, sizeof(tunnel_entry) * TUNNEL_MAX_COUNT);
-        memcpy(session->RightTunnels, backupRightTunnels, sizeof(tunnel_entry) * TUNNEL_MAX_COUNT);
+            session, EDGE_BOTTOMRIGHT, height, edgeStyle, tileDescriptors[0], tileDescriptors[2]);
     }
 
-    if (tileElement->AsSurface()->GetWaterHeight() > 0)
+    const uint16_t waterHeight = tileElement->AsSurface()->GetWaterHeight();
+    const bool waterGetsClipped = (session->ViewFlags & VIEWPORT_FLAG_CLIP_VIEW) && (waterHeight > gClipHeight * COORDS_Z_STEP);
+
+    if (waterHeight > 0 && !gTrackDesignSaveMode && !waterGetsClipped)
     {
         // loc_6615A9: (water height)
-        session->InteractionType = VIEWPORT_INTERACTION_ITEM_WATER;
+        session->InteractionType = ViewportInteractionItem::Water;
 
         const uint16_t localHeight = height + 16;
-        const uint16_t waterHeight = tileElement->AsSurface()->GetWaterHeight() * 16;
 
-        if (!gTrackDesignSaveMode)
+        session->WaterHeight = waterHeight;
+
+        int32_t image_offset = 0;
+        if (waterHeight <= localHeight)
         {
-            session->WaterHeight = waterHeight;
+            image_offset = byte_97B740[surfaceShape & 0xF];
+        }
 
-            int32_t image_offset = 0;
-            if (waterHeight <= localHeight)
-            {
-                image_offset = byte_97B740[surfaceShape & 0xF];
-            }
+        const int32_t image_id = (SPR_WATER_MASK + image_offset) | IMAGE_TYPE_REMAP | IMAGE_TYPE_TRANSPARENT
+            | EnumValue(FilterPaletteID::PaletteWater) << 19;
+        PaintAddImageAsParent(session, image_id, { 0, 0, waterHeight }, { 32, 32, -1 });
 
-            const int32_t image_id = (SPR_WATER_MASK + image_offset) | IMAGE_TYPE_REMAP | IMAGE_TYPE_TRANSPARENT
-                | PALETTE_WATER << 19;
-            sub_98196C(session, image_id, 0, 0, 32, 32, -1, waterHeight);
+        const bool transparent = gConfigGeneral.transparent_water || (session->ViewFlags & VIEWPORT_FLAG_UNDERGROUND_INSIDE);
+        const uint32_t overlayStart = transparent ? SPR_WATER_OVERLAY : SPR_RCT1_WATER_OVERLAY;
+        PaintAttachToPreviousPS(session, overlayStart + image_offset, 0, 0);
 
-            paint_attach_to_previous_ps(session, SPR_WATER_OVERLAY + image_offset, 0, 0);
-
+        if (!(session->ViewFlags & VIEWPORT_FLAG_HIDE_VERTICAL))
+        {
             // This wasn't in the original, but the code depended on globals that were only set in a different conditional
             const uint32_t edgeStyle = tileElement->AsSurface()->GetEdgeStyle();
             // end new code
 
-            viewport_surface_draw_water_side_top(
-                session, EDGE_TOPLEFT, waterHeight / 16, edgeStyle, tileDescriptors[0], tileDescriptors[3]);
-            viewport_surface_draw_water_side_top(
-                session, EDGE_TOPRIGHT, waterHeight / 16, edgeStyle, tileDescriptors[0], tileDescriptors[4]);
             viewport_surface_draw_water_side_bottom(
-                session, EDGE_BOTTOMLEFT, waterHeight / 16, edgeStyle, tileDescriptors[0], tileDescriptors[1]);
+                session, EDGE_BOTTOMLEFT, waterHeight, edgeStyle, tileDescriptors[0], tileDescriptors[1]);
             viewport_surface_draw_water_side_bottom(
-                session, EDGE_BOTTOMRIGHT, waterHeight / 16, edgeStyle, tileDescriptors[0], tileDescriptors[2]);
+                session, EDGE_BOTTOMRIGHT, waterHeight, edgeStyle, tileDescriptors[0], tileDescriptors[2]);
+            viewport_surface_draw_water_side_top(
+                session, EDGE_TOPLEFT, waterHeight, edgeStyle, tileDescriptors[0], tileDescriptors[3]);
+            viewport_surface_draw_water_side_top(
+                session, EDGE_TOPRIGHT, waterHeight, edgeStyle, tileDescriptors[0], tileDescriptors[4]);
         }
     }
 
     if ((tileElement->AsSurface()->GetParkFences()) && !gTrackDesignSaveMode)
     {
         // Owned land boundary fences
-        session->InteractionType = VIEWPORT_INTERACTION_ITEM_PARK;
+        session->InteractionType = ViewportInteractionItem::ParkEntrance;
 
-        registers regs = {};
-        regs.al = tileElement->AsSurface()->GetParkFences();
-        regs.ax = regs.ax << rotation;
-        regs.ah = regs.al >> 4;
-
-        uint8_t al = regs.al | regs.ah;
+        uint8_t rotatedFences = rol4(tileElement->AsSurface()->GetParkFences(), rotation);
 
         for (const auto& fenceData : _tileSurfaceBoundaries)
         {
-            const int32_t bit = al & 1;
-            al >>= 1;
+            const int32_t edgeHasFence = rotatedFences & 1;
+            rotatedFences >>= 1;
 
-            if (bit == 0)
+            if (edgeHasFence == 0)
                 continue;
 
             int32_t local_height = height;
@@ -1517,14 +1386,14 @@ void surface_paint(paint_session* session, uint8_t direction, uint16_t height, c
                 }
             }
 
-            sub_98197C(
-                session, image_id, fenceData.offset.x, fenceData.offset.y, fenceData.box_size.x, fenceData.box_size.y, 9,
-                local_height, fenceData.box_offset.x, fenceData.box_offset.y, local_height + 1);
+            PaintAddImageAsParent(
+                session, image_id, { fenceData.offset, local_height }, { fenceData.box_size, 9 },
+                { fenceData.box_offset, local_height + 1 });
         }
     }
 
-    session->InteractionType = VIEWPORT_INTERACTION_ITEM_TERRAIN;
-    session->Unk141E9DB |= G141E9DB_FLAG_1;
+    session->InteractionType = ViewportInteractionItem::Terrain;
+    session->Unk141E9DB |= PaintSessionFlags::IsPassedSurface;
 
     switch (surfaceShape)
     {

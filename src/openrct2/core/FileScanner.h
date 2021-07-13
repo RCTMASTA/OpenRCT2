@@ -1,5 +1,5 @@
 /*****************************************************************************
- * Copyright (c) 2014-2018 OpenRCT2 developers
+ * Copyright (c) 2014-2020 OpenRCT2 developers
  *
  * For a complete list of all authors, please refer to contributors.md
  * Interested in contributing? Visit https://github.com/OpenRCT2/OpenRCT2
@@ -11,6 +11,7 @@
 
 #include "../common.h"
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -21,7 +22,7 @@ struct FileInfo
     uint64_t LastModified;
 };
 
-interface IFileScanner
+struct IFileScanner
 {
     virtual ~IFileScanner() = default;
 
@@ -50,7 +51,7 @@ namespace Path
      * @param recurse Whether to scan sub directories or not.
      * @returns A new FileScanner, this must be deleted when no longer needed.
      */
-    IFileScanner* ScanDirectory(const std::string& pattern, bool recurse);
+    std::unique_ptr<IFileScanner> ScanDirectory(const std::string& pattern, bool recurse);
 
     /**
      * Scans a directory and all sub directories

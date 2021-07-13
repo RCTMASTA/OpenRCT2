@@ -1,5 +1,5 @@
 /*****************************************************************************
- * Copyright (c) 2014-2018 OpenRCT2 developers
+ * Copyright (c) 2014-2020 OpenRCT2 developers
  *
  * For a complete list of all authors, please refer to contributors.md
  * Interested in contributing? Visit https://github.com/OpenRCT2/OpenRCT2
@@ -11,9 +11,10 @@
 #include "../../interface/Viewport.h"
 #include "../../paint/Paint.h"
 #include "../../paint/Supports.h"
-#include "../../world/Sprite.h"
+#include "../../world/Entity.h"
 #include "../Track.h"
 #include "../TrackPaint.h"
+#include "../Vehicle.h"
 
 /** rct2: 0x008A2ABC */
 static void paint_enterprise_structure(
@@ -23,7 +24,7 @@ static void paint_enterprise_structure(
 
     const TileElement* savedTileElement = static_cast<const TileElement*>(session->CurrentlyDrawnItem);
     rct_ride_entry* rideEntry = get_ride_entry(ride->subtype);
-    rct_vehicle* vehicle = nullptr;
+    Vehicle* vehicle = nullptr;
 
     if (rideEntry == nullptr)
     {
@@ -34,30 +35,29 @@ static void paint_enterprise_structure(
 
     if (ride->lifecycle_flags & RIDE_LIFECYCLE_ON_TRACK && ride->vehicles[0] != SPRITE_INDEX_NULL)
     {
-        session->InteractionType = VIEWPORT_INTERACTION_ITEM_SPRITE;
-        vehicle = GET_VEHICLE(ride->vehicles[0]);
+        session->InteractionType = ViewportInteractionItem::Entity;
+        vehicle = GetEntity<Vehicle>(ride->vehicles[0]);
         session->CurrentlyDrawnItem = vehicle;
     }
 
     uint32_t imageOffset = tileElement->GetDirectionWithOffset(session->CurrentRotation);
     if (vehicle != nullptr)
     {
-        imageOffset = (vehicle->vehicle_sprite_type << 2) + (((vehicle->sprite_direction >> 3) + session->CurrentRotation) % 4);
+        imageOffset = (vehicle->Pitch << 2) + (((vehicle->sprite_direction >> 3) + session->CurrentRotation) % 4);
     }
 
     uint32_t imageColourFlags = session->TrackColours[SCHEME_MISC];
     if (imageColourFlags == IMAGE_TYPE_REMAP)
     {
-        imageColourFlags = SPRITE_ID_PALETTE_COLOUR_2(
-            ride->vehicle_colours[0].body_colour, ride->vehicle_colours[0].trim_colour);
+        imageColourFlags = SPRITE_ID_PALETTE_COLOUR_2(ride->vehicle_colours[0].Body, ride->vehicle_colours[0].Trim);
     }
 
     uint32_t imageId = (baseImageId + imageOffset) | imageColourFlags;
-    sub_98197C(session, imageId, xOffset, yOffset, 24, 24, 48, height, 0, 0, height);
+    PaintAddImageAsParent(session, imageId, xOffset, yOffset, 24, 24, 48, height, 0, 0, height);
 
-    rct_drawpixelinfo* dpi = session->DPI;
+    rct_drawpixelinfo* dpi = &session->DPI;
 
-    if (dpi->zoom_level == 0 && imageOffset < 12 && ride->lifecycle_flags & RIDE_LIFECYCLE_ON_TRACK && vehicle != nullptr)
+    if (dpi->zoom_level <= 0 && imageOffset < 12 && ride->lifecycle_flags & RIDE_LIFECYCLE_ON_TRACK && vehicle != nullptr)
     {
         for (int32_t i = 0; i < 15; i++)
         {
@@ -69,31 +69,33 @@ static void paint_enterprise_structure(
             uint32_t peepFrameOffset = ((imageOffset % 4) * 4 + (i * 4) % 15) & 0x0F;
             uint32_t ax = (imageOffset & 0xFFFFFFFC) << 2;
             imageId = (baseImageId + 196 + peepFrameOffset + ax) | SPRITE_ID_PALETTE_COLOUR_1(vehicle->peep_tshirt_colours[i]);
-            sub_98199C(session, imageId, xOffset, yOffset, 24, 24, 48, height, 0, 0, height);
+            PaintAddImageAsChild(session, imageId, xOffset, yOffset, 24, 24, 48, height, 0, 0, height);
         }
     }
 
     session->CurrentlyDrawnItem = savedTileElement;
-    session->InteractionType = VIEWPORT_INTERACTION_ITEM_RIDE;
+    session->InteractionType = ViewportInteractionItem::Ride;
 }
 
 /** rct2: 0x008A1584 */
 static void paint_enterprise(
-    paint_session* session, uint8_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
+    paint_session* session, ride_id_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
     const TileElement* tileElement)
 {
+    auto ride = get_ride(rideIndex);
+    if (ride == nullptr)
+        return;
+
     trackSequence = track_map_4x4[direction][trackSequence];
 
     int32_t edges = edges_4x4[trackSequence];
-    Ride* ride = get_ride(rideIndex);
-    LocationXY16 position = session->MapPosition;
 
     wooden_a_supports_paint_setup(session, direction & 1, 0, height, session->TrackColours[SCHEME_MISC], nullptr);
 
     track_paint_util_paint_floor(session, edges, session->TrackColours[SCHEME_TRACK], height, floorSpritesCork);
 
     track_paint_util_paint_fences(
-        session, edges, position, tileElement, ride, session->TrackColours[SCHEME_TRACK], height, fenceSpritesRope,
+        session, edges, session->MapPosition, tileElement, ride, session->TrackColours[SCHEME_TRACK], height, fenceSpritesRope,
         session->CurrentRotation);
 
     switch (trackSequence)
@@ -162,9 +164,9 @@ static void paint_enterprise(
 /**
  * rct2: 0x008A13B4
  */
-TRACK_PAINT_FUNCTION get_track_paint_function_enterprise(int32_t trackType, int32_t direction)
+TRACK_PAINT_FUNCTION get_track_paint_function_enterprise(int32_t trackType)
 {
-    if (trackType != FLAT_TRACK_ELEM_4_X_4)
+    if (trackType != TrackElemType::FlatTrack4x4)
     {
         return nullptr;
     }

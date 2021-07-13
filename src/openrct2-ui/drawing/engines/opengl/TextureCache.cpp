@@ -1,5 +1,5 @@
 /*****************************************************************************
- * Copyright (c) 2014-2018 OpenRCT2 developers
+ * Copyright (c) 2014-2020 OpenRCT2 developers
  *
  * For a complete list of all authors, please refer to contributors.md
  * Interested in contributing? Visit https://github.com/OpenRCT2/OpenRCT2
@@ -13,6 +13,8 @@
 
 #    include <algorithm>
 #    include <openrct2/drawing/Drawing.h>
+#    include <openrct2/util/Util.h>
+#    include <openrct2/world/Location.hpp>
 #    include <stdexcept>
 #    include <vector>
 
@@ -30,6 +32,8 @@ TextureCache::~TextureCache()
 
 void TextureCache::InvalidateImage(uint32_t image)
 {
+    unique_lock lock(_mutex);
+
     uint32_t index = _indexMap[image];
     if (index == UNUSED_INDEX)
         return;
@@ -59,21 +63,32 @@ void TextureCache::InvalidateImage(uint32_t image)
     }
 }
 
+// Note: for performance reasons, this returns a BasicTextureInfo over an AtlasTextureInfo (also to not expose the cache)
 BasicTextureInfo TextureCache::GetOrLoadImageTexture(uint32_t image)
 {
-    image &= 0x7FFFF;
+    uint32_t index;
 
-    uint32_t index = _indexMap[image];
-    if (index != UNUSED_INDEX)
+    image &= 0x7FFFFUL;
+
+    // Try to read cached texture first.
     {
-        const auto& info = _textureCache[index];
-        return {
-            info.index,
-            info.normalizedBounds,
-        };
+        shared_lock lock(_mutex);
+
+        index = _indexMap[image];
+        if (index != UNUSED_INDEX)
+        {
+            const auto& info = _textureCache[index];
+            return {
+                info.index,
+                info.normalizedBounds,
+            };
+        }
     }
 
-    index = (uint32_t)_textureCache.size();
+    // Load new texture.
+    unique_lock lock(_mutex);
+
+    index = static_cast<uint32_t>(_textureCache.size());
 
     AtlasTextureInfo info = LoadImageTexture(image);
 
@@ -83,23 +98,37 @@ BasicTextureInfo TextureCache::GetOrLoadImageTexture(uint32_t image)
     return info;
 }
 
-BasicTextureInfo TextureCache::GetOrLoadGlyphTexture(uint32_t image, uint8_t* palette)
+BasicTextureInfo TextureCache::GetOrLoadGlyphTexture(uint32_t image, const PaletteMap& paletteMap)
 {
-    GlyphId glyphId;
+    GlyphId glyphId{};
     glyphId.Image = image;
-    std::copy_n(palette, sizeof(glyphId.Palette), (uint8_t*)&glyphId.Palette);
 
-    auto kvp = _glyphTextureMap.find(glyphId);
-    if (kvp != _glyphTextureMap.end())
+    // Try to read cached texture first.
     {
-        const auto& info = kvp->second;
-        return {
-            info.index,
-            info.normalizedBounds,
-        };
+        shared_lock lock(_mutex);
+
+        uint8_t glyphMap[8];
+        for (uint8_t i = 0; i < 8; i++)
+        {
+            glyphMap[i] = paletteMap[i];
+        }
+        std::copy_n(glyphMap, sizeof(glyphId.Palette), reinterpret_cast<uint8_t*>(&glyphId.Palette));
+
+        auto kvp = _glyphTextureMap.find(glyphId);
+        if (kvp != _glyphTextureMap.end())
+        {
+            const auto& info = kvp->second;
+            return {
+                info.index,
+                info.normalizedBounds,
+            };
+        }
     }
 
-    auto cacheInfo = LoadGlyphTexture(image, palette);
+    // Load new texture.
+    unique_lock lock(_mutex);
+
+    auto cacheInfo = LoadGlyphTexture(image, paletteMap);
     auto it = _glyphTextureMap.insert(std::make_pair(glyphId, cacheInfo));
 
     return (*it.first).second;
@@ -128,9 +157,9 @@ void TextureCache::CreateTextures()
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
         glGenTextures(1, &_paletteTexture);
-        glBindTexture(GL_TEXTURE_RECTANGLE, _paletteTexture);
-        glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glBindTexture(GL_TEXTURE_2D, _paletteTexture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         GeneratePaletteTexture();
 
@@ -142,25 +171,31 @@ void TextureCache::CreateTextures()
 
 void TextureCache::GeneratePaletteTexture()
 {
-    rct_drawpixelinfo dpi = CreateDPI(256, PALETTE_TO_G1_OFFSET_COUNT + 5);
+    static_assert(PALETTE_TO_G1_OFFSET_COUNT + 5 < 256, "Height of palette too large!");
+    constexpr int32_t height = 256;
+    constexpr int32_t width = height;
+    rct_drawpixelinfo dpi = CreateDPI(width, height);
 
     // Init no-op palette
-    for (int i = 0; i < 256; ++i)
+    for (int i = 0; i < width; ++i)
     {
         dpi.bits[i] = i;
     }
 
     for (int i = 0; i < PALETTE_TO_G1_OFFSET_COUNT; ++i)
     {
-        GLint y = PaletteToY(i);
-        uint16_t image = palette_to_g1_offset[i];
-        auto element = gfx_get_g1_element(image);
-        gfx_draw_sprite_software(&dpi, image, -element->x_offset, y - element->y_offset, 0);
+        GLint y = PaletteToY(static_cast<FilterPaletteID>(i));
+
+        auto g1Index = GetPaletteG1Index(i);
+        if (g1Index)
+        {
+            auto element = gfx_get_g1_element(*g1Index);
+            gfx_draw_sprite_software(&dpi, ImageId(*g1Index), { -element->x_offset, y - element->y_offset });
+        }
     }
 
-    glBindTexture(GL_TEXTURE_RECTANGLE, _paletteTexture);
-    glTexImage2D(
-        GL_TEXTURE_RECTANGLE, 0, GL_R8UI, 256, PALETTE_TO_G1_OFFSET_COUNT + 5, 0, GL_RED_INTEGER, GL_UNSIGNED_BYTE, dpi.bits);
+    glBindTexture(GL_TEXTURE_2D, _paletteTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8UI, width, height, 0, GL_RED_INTEGER, GL_UNSIGNED_BYTE, dpi.bits);
     DeleteDPI(dpi);
 }
 
@@ -176,26 +211,26 @@ void TextureCache::EnlargeAtlasesTexture(GLuint newEntries)
     {
         // Retrieve current array data, growing buffer.
         oldPixels.resize(_atlasesTextureDimensions * _atlasesTextureDimensions * _atlasesTextureCapacity);
-        if (oldPixels.size() > 0)
+        if (!oldPixels.empty())
         {
             glGetTexImage(GL_TEXTURE_2D_ARRAY, 0, GL_RED_INTEGER, GL_UNSIGNED_BYTE, oldPixels.data());
         }
 
         // Initial capacity will be 12 which covers most cases of a fully visible park.
-        _atlasesTextureCapacity = (_atlasesTextureCapacity + 6) << 1;
-    }
+        _atlasesTextureCapacity = (_atlasesTextureCapacity + 6) << 1UL;
 
-    glBindTexture(GL_TEXTURE_2D_ARRAY, _atlasesTexture);
-    glTexImage3D(
-        GL_TEXTURE_2D_ARRAY, 0, GL_R8UI, _atlasesTextureDimensions, _atlasesTextureDimensions, _atlasesTextureCapacity, 0,
-        GL_RED_INTEGER, GL_UNSIGNED_BYTE, nullptr);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, _atlasesTexture);
+        glTexImage3D(
+            GL_TEXTURE_2D_ARRAY, 0, GL_R8UI, _atlasesTextureDimensions, _atlasesTextureDimensions, _atlasesTextureCapacity, 0,
+            GL_RED_INTEGER, GL_UNSIGNED_BYTE, nullptr);
 
-    // Restore old data
-    if (oldPixels.size() > 0)
-    {
-        glTexSubImage3D(
-            GL_TEXTURE_2D_ARRAY, 0, 0, 0, 0, _atlasesTextureDimensions, _atlasesTextureDimensions, _atlasesTextureIndices,
-            GL_RED_INTEGER, GL_UNSIGNED_BYTE, oldPixels.data());
+        // Restore old data
+        if (!oldPixels.empty())
+        {
+            glTexSubImage3D(
+                GL_TEXTURE_2D_ARRAY, 0, 0, 0, 0, _atlasesTextureDimensions, _atlasesTextureDimensions, _atlasesTextureIndices,
+                GL_RED_INTEGER, GL_UNSIGNED_BYTE, oldPixels.data());
+        }
     }
 
     _atlasesTextureIndices = newIndices;
@@ -218,9 +253,9 @@ AtlasTextureInfo TextureCache::LoadImageTexture(uint32_t image)
     return cacheInfo;
 }
 
-AtlasTextureInfo TextureCache::LoadGlyphTexture(uint32_t image, uint8_t* palette)
+AtlasTextureInfo TextureCache::LoadGlyphTexture(uint32_t image, const PaletteMap& paletteMap)
 {
-    rct_drawpixelinfo dpi = GetGlyphAsDPI(image, palette);
+    rct_drawpixelinfo dpi = GetGlyphAsDPI(image, paletteMap);
 
     auto cacheInfo = AllocateImage(dpi.width, dpi.height);
     cacheInfo.image = image;
@@ -249,16 +284,16 @@ AtlasTextureInfo TextureCache::AllocateImage(int32_t imageWidth, int32_t imageHe
     }
 
     // If there is no such atlas, then create a new one
-    if ((int32_t)_atlases.size() >= _atlasesTextureIndicesLimit)
+    if (static_cast<int32_t>(_atlases.size()) >= _atlasesTextureIndicesLimit)
     {
         throw std::runtime_error("more texture atlases required, but device limit reached!");
     }
 
-    int32_t atlasIndex = (int32_t)_atlases.size();
-    int32_t atlasSize = (int32_t)powf(2, (float)Atlas::CalculateImageSizeOrder(imageWidth, imageHeight));
+    auto atlasIndex = static_cast<int32_t>(_atlases.size());
+    int32_t atlasSize = powf(2, static_cast<float>(Atlas::CalculateImageSizeOrder(imageWidth, imageHeight)));
 
 #    ifdef DEBUG
-    log_verbose("new texture atlas #%d (size %d) allocated\n", atlasIndex, atlasSize);
+    log_verbose("new texture atlas #%d (size %d) allocated", atlasIndex, atlasSize);
 #    endif
 
     _atlases.emplace_back(atlasIndex, atlasSize);
@@ -273,23 +308,25 @@ AtlasTextureInfo TextureCache::AllocateImage(int32_t imageWidth, int32_t imageHe
 
 rct_drawpixelinfo TextureCache::GetImageAsDPI(uint32_t image, uint32_t tertiaryColour)
 {
-    auto g1Element = gfx_get_g1_element(image & 0x7FFFF);
+    auto g1Element = gfx_get_g1_element(image & 0x7FFFFUL);
     int32_t width = g1Element->width;
     int32_t height = g1Element->height;
 
     rct_drawpixelinfo dpi = CreateDPI(width, height);
-    gfx_draw_sprite_software(&dpi, image, -g1Element->x_offset, -g1Element->y_offset, tertiaryColour);
+    gfx_draw_sprite_software(&dpi, ImageId::FromUInt32(image, tertiaryColour), { -g1Element->x_offset, -g1Element->y_offset });
     return dpi;
 }
 
-rct_drawpixelinfo TextureCache::GetGlyphAsDPI(uint32_t image, uint8_t* palette)
+rct_drawpixelinfo TextureCache::GetGlyphAsDPI(uint32_t image, const PaletteMap& palette)
 {
-    auto g1Element = gfx_get_g1_element(image & 0x7FFFF);
+    auto g1Element = gfx_get_g1_element(image & 0x7FFFFUL);
     int32_t width = g1Element->width;
     int32_t height = g1Element->height;
 
     rct_drawpixelinfo dpi = CreateDPI(width, height);
-    gfx_draw_sprite_palette_set_software(&dpi, image, -g1Element->x_offset, -g1Element->y_offset, palette, nullptr);
+
+    const auto glyphCoords = ScreenCoordsXY{ -g1Element->x_offset, -g1Element->y_offset };
+    gfx_draw_sprite_palette_set_software(&dpi, ImageId::FromUInt32(image), glyphCoords, palette);
     return dpi;
 }
 
@@ -333,9 +370,9 @@ GLuint TextureCache::GetPaletteTexture()
     return _paletteTexture;
 }
 
-GLint TextureCache::PaletteToY(uint32_t palette)
+GLint TextureCache::PaletteToY(FilterPaletteID palette)
 {
-    return palette > PALETTE_WATER ? palette + 5 : palette + 1;
+    return palette > FilterPaletteID::PaletteWater ? EnumValue(palette) + 5 : EnumValue(palette) + 1;
 }
 
 #endif /* DISABLE_OPENGL */

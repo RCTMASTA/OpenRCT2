@@ -1,5 +1,5 @@
 /*****************************************************************************
- * Copyright (c) 2014-2018 OpenRCT2 developers
+ * Copyright (c) 2014-2020 OpenRCT2 developers
  *
  * For a complete list of all authors, please refer to contributors.md
  * Interested in contributing? Visit https://github.com/OpenRCT2/OpenRCT2
@@ -11,81 +11,103 @@
 
 #include "../Context.h"
 #include "../common.h"
+#include "../object/LargeSceneryObject.h"
 #include "../object/ObjectManager.h"
+#include "../world/Banner.h"
 #include "TileElement.h"
 
 colour_t LargeSceneryElement::GetPrimaryColour() const
 {
-    return colour[0] & TILE_ELEMENT_COLOUR_MASK;
+    return Colour[0];
 }
 
 colour_t LargeSceneryElement::GetSecondaryColour() const
 {
-    return colour[1] & TILE_ELEMENT_COLOUR_MASK;
+    return Colour[1];
 }
 
 void LargeSceneryElement::SetPrimaryColour(colour_t newColour)
 {
     assert(newColour <= 31);
-    colour[0] &= ~TILE_ELEMENT_COLOUR_MASK;
-    colour[0] |= newColour;
+    Colour[0] = newColour;
 }
 
 void LargeSceneryElement::SetSecondaryColour(colour_t newColour)
 {
     assert(newColour <= 31);
-    colour[1] &= ~TILE_ELEMENT_COLOUR_MASK;
-    colour[1] |= newColour;
+    Colour[1] = newColour;
+}
+
+Banner* LargeSceneryElement::GetBanner() const
+{
+    return ::GetBanner(GetBannerIndex());
 }
 
 BannerIndex LargeSceneryElement::GetBannerIndex() const
 {
-    return (entryIndex & 0xC0) | (((colour[0]) & ~TILE_ELEMENT_COLOUR_MASK) >> 2)
-        | (((colour[1]) & ~TILE_ELEMENT_COLOUR_MASK) >> 5);
+    return BannerIndex;
 }
 
-void LargeSceneryElement::SetBannerIndex(BannerIndex newIndex)
+void LargeSceneryElement::SetBannerIndex(::BannerIndex newIndex)
 {
-    entryIndex |= newIndex & 0xC0;
-    colour[0] |= (newIndex & 0x38) << 2;
-    colour[1] |= (newIndex & 7) << 5;
+    this->BannerIndex = newIndex;
 }
 
-uint32_t LargeSceneryElement::GetEntryIndex() const
+bool LargeSceneryElement::IsAccounted() const
 {
-    return entryIndex & TILE_ELEMENT_LARGE_TYPE_MASK;
+    return (Flags2 & LARGE_SCENERY_ELEMENT_FLAGS2_ACCOUNTED) != 0;
 }
 
-rct_scenery_entry* LargeSceneryElement::GetEntry() const
+void LargeSceneryElement::SetIsAccounted(bool isAccounted)
+{
+    if (isAccounted)
+    {
+        Flags2 |= LARGE_SCENERY_ELEMENT_FLAGS2_ACCOUNTED;
+    }
+    else
+    {
+        Flags2 &= ~LARGE_SCENERY_ELEMENT_FLAGS2_ACCOUNTED;
+    }
+}
+
+ObjectEntryIndex LargeSceneryElement::GetEntryIndex() const
+{
+    return EntryIndex;
+}
+
+LargeSceneryEntry* LargeSceneryElement::GetEntry() const
 {
     return get_large_scenery_entry(GetEntryIndex());
 }
 
-uint16_t LargeSceneryElement::GetSequenceIndex() const
+const LargeSceneryObject* LargeSceneryElement::GetObject() const
 {
-    return (entryIndex >> 10);
+    return static_cast<const LargeSceneryObject*>(object_entry_get_object(ObjectType::LargeScenery, GetEntryIndex()));
 }
 
-void LargeSceneryElement::SetEntryIndex(uint32_t newIndex)
+uint8_t LargeSceneryElement::GetSequenceIndex() const
 {
-    entryIndex &= ~TILE_ELEMENT_LARGE_TYPE_MASK;
-    entryIndex |= (newIndex & TILE_ELEMENT_LARGE_TYPE_MASK);
+    return SequenceIndex;
 }
 
-void LargeSceneryElement::SetSequenceIndex(uint16_t sequence)
+void LargeSceneryElement::SetEntryIndex(ObjectEntryIndex newIndex)
 {
-    entryIndex &= TILE_ELEMENT_LARGE_TYPE_MASK;
-    entryIndex |= (sequence << 10);
+    EntryIndex = newIndex;
 }
 
-rct_scenery_entry* get_large_scenery_entry(int32_t entryIndex)
+void LargeSceneryElement::SetSequenceIndex(uint8_t sequence)
 {
-    rct_scenery_entry* result = nullptr;
+    SequenceIndex = sequence;
+}
+
+LargeSceneryEntry* get_large_scenery_entry(ObjectEntryIndex entryIndex)
+{
+    LargeSceneryEntry* result = nullptr;
     auto& objMgr = OpenRCT2::GetContext()->GetObjectManager();
-    auto obj = objMgr.GetLoadedObject(OBJECT_TYPE_LARGE_SCENERY, entryIndex);
+    auto obj = objMgr.GetLoadedObject(ObjectType::LargeScenery, entryIndex);
     if (obj != nullptr)
     {
-        result = (rct_scenery_entry*)obj->GetLegacyData();
+        result = static_cast<LargeSceneryEntry*>(obj->GetLegacyData());
     }
     return result;
 }

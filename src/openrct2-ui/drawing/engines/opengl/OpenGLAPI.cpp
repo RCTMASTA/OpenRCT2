@@ -1,5 +1,5 @@
 /*****************************************************************************
- * Copyright (c) 2014-2018 OpenRCT2 developers
+ * Copyright (c) 2014-2020 OpenRCT2 developers
  *
  * For a complete list of all authors, please refer to contributors.md
  * Interested in contributing? Visit https://github.com/OpenRCT2/OpenRCT2
@@ -17,14 +17,14 @@
 #        include "OpenGLAPIProc.h"
 #        undef OPENGL_PROC
 
-#        include <SDL2/SDL_video.h>
+#        include <SDL_video.h>
 #        include <openrct2/core/Console.hpp>
 
 static const char* TryLoadAllProcAddresses()
 {
 #        define OPENGL_PROC(TYPE, PROC)                                                                                        \
             {                                                                                                                  \
-                PROC = (TYPE)SDL_GL_GetProcAddress(#PROC);                                                                     \
+                PROC = reinterpret_cast<TYPE>(SDL_GL_GetProcAddress(#PROC));                                                   \
                 if (PROC == nullptr)                                                                                           \
                 {                                                                                                              \
                     return #PROC;                                                                                              \

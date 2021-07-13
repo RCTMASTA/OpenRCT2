@@ -1,5 +1,5 @@
 /*****************************************************************************
- * Copyright (c) 2014-2018 OpenRCT2 developers
+ * Copyright (c) 2014-2020 OpenRCT2 developers
  *
  * For a complete list of all authors, please refer to contributors.md
  * Interested in contributing? Visit https://github.com/OpenRCT2/OpenRCT2
@@ -12,6 +12,9 @@
 
 #include "../common.h"
 #include "Location.hpp"
+#include "Map.h"
+
+#include <vector>
 
 #pragma pack(push, 1)
 struct rct_entrance_type
@@ -24,29 +27,33 @@ struct rct_entrance_type
 assert_struct_size(rct_entrance_type, 8);
 #pragma pack(pop)
 
-void game_command_remove_park_entrance(
-    int32_t* eax, int32_t* ebx, int32_t* ecx, int32_t* edx, int32_t* esi, int32_t* edi, int32_t* ebp);
-
 struct TileElement;
 
+constexpr const uint8_t ParkEntranceHeight = 12 * COORDS_Z_STEP;
+constexpr const uint8_t RideEntranceHeight = 7 * COORDS_Z_STEP;
+constexpr const uint8_t RideExitHeight = 5 * COORDS_Z_STEP;
+
 extern bool gParkEntranceGhostExists;
-extern LocationXYZ16 gParkEntranceGhostPosition;
-extern uint8_t gParkEntranceGhostDirection;
+extern CoordsXYZD gParkEntranceGhostPosition;
 
 #define MAX_PARK_ENTRANCES 4
 
-extern CoordsXYZD gParkEntrances[MAX_PARK_ENTRANCES];
+constexpr int32_t MaxRideEntranceOrExitHeight = 244 * COORDS_Z_STEP;
+
+using ParkEntranceIndex = uint8_t;
+constexpr const ParkEntranceIndex PARK_ENTRANCE_INDEX_NULL = 255;
+
+extern std::vector<CoordsXYZD> gParkEntrances;
 
 extern CoordsXYZD gRideEntranceExitGhostPosition;
-extern uint8_t gRideEntranceExitGhostStationIndex;
+extern StationIndex gRideEntranceExitGhostStationIndex;
 
 void park_entrance_remove_ghost();
-money32 park_entrance_place_ghost(int32_t x, int32_t y, int32_t z, int32_t direction);
-money32 place_park_entrance(int16_t x, int16_t y, int16_t z, uint8_t direction);
+money32 park_entrance_place_ghost(const CoordsXYZD& entranceLoc);
 
 void reset_park_entrance();
-void maze_entrance_hedge_replacement(int32_t x, int32_t y, TileElement* tileElement);
-void maze_entrance_hedge_removal(int32_t x, int32_t y, TileElement* tileElement);
+void maze_entrance_hedge_replacement(const CoordsXYE& entrance);
+void maze_entrance_hedge_removal(const CoordsXYE& entrance);
 
 void fix_park_entrance_locations();
 

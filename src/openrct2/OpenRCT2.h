@@ -1,5 +1,5 @@
 /*****************************************************************************
- * Copyright (c) 2014-2018 OpenRCT2 developers
+ * Copyright (c) 2014-2020 OpenRCT2 developers
  *
  * For a complete list of all authors, please refer to contributors.md
  * Interested in contributing? Visit https://github.com/OpenRCT2/OpenRCT2
@@ -11,13 +11,17 @@
 
 #include "common.h"
 
-enum STARTUP_ACTION
+#include <string>
+
+enum class PromptMode : uint8_t;
+
+enum class StartupAction
 {
-    STARTUP_ACTION_NONE,
-    STARTUP_ACTION_INTRO,
-    STARTUP_ACTION_TITLE,
-    STARTUP_ACTION_OPEN,
-    STARTUP_ACTION_EDIT
+    None,
+    Intro,
+    Title,
+    Open,
+    Edit
 };
 
 enum
@@ -32,14 +36,10 @@ enum
     SCREEN_FLAGS_EDITOR = (SCREEN_FLAGS_SCENARIO_EDITOR | SCREEN_FLAGS_TRACK_DESIGNER | SCREEN_FLAGS_TRACK_MANAGER),
 };
 
-/** The exit code for OpenRCT2 when it exits. */
-extern int32_t gExitCode;
-
-extern int32_t gOpenRCT2StartupAction;
+extern StartupAction gOpenRCT2StartupAction;
 extern utf8 gOpenRCT2StartupActionPath[512];
-extern utf8 gExePath[MAX_PATH];
 extern utf8 gCustomUserDataPath[MAX_PATH];
-extern utf8 gCustomOpenrctDataPath[MAX_PATH];
+extern utf8 gCustomOpenRCT2DataPath[MAX_PATH];
 extern utf8 gCustomRCT1DataPath[MAX_PATH];
 extern utf8 gCustomRCT2DataPath[MAX_PATH];
 extern utf8 gCustomPassword[MAX_PATH];
@@ -47,18 +47,19 @@ extern bool gOpenRCT2Headless;
 extern bool gOpenRCT2NoGraphics;
 extern bool gOpenRCT2ShowChangelog;
 extern bool gOpenRCT2SilentBreakpad;
+extern utf8 gSilentRecordingName[MAX_PATH];
 
 #ifndef DISABLE_NETWORK
 extern int32_t gNetworkStart;
-extern char gNetworkStartHost[128];
+extern std::string gNetworkStartHost;
 extern int32_t gNetworkStartPort;
-extern char* gNetworkStartAddress;
+extern std::string gNetworkStartAddress;
 #endif
 
 extern uint32_t gCurrentDrawCount;
 extern uint8_t gScreenFlags;
 extern uint32_t gScreenAge;
-extern uint8_t gSavePromptMode;
+extern PromptMode gSavePromptMode;
 
 void openrct2_write_full_version_info(utf8* buffer, size_t bufferSize);
 void openrct2_finish();

@@ -15,15 +15,15 @@ let
   objects-src = pkgs.fetchFromGitHub {
     owner = "OpenRCT2";
     repo = "objects";
-    rev = "v1.0.6";
-    sha256 = "1yhyafsk2lyasgj1r7h2n4k7vp5q792aj86ggpbmd6bcp4kk6hbm";
+    rev = "v1.0.21";
+    sha256 = "b081f885311f9afebc41d9dd4a68b7db4cf736eb815c04e307e1a426f08cfa35";
   };
 
   title-sequences-src = pkgs.fetchFromGitHub {
     owner = "OpenRCT2";
     repo = "title-sequences";
-    rev = "v0.1.2";
-    sha256 = "1yb1ynkfmiankii3fngr9km5wbc07rp30nh0apkj6wryrhy7imgm";
+    rev = "v0.1.2b";
+    sha256 = "a220b4c3cd3180bebb261cc59141b7fb290b433631ba9c7587a4f2c9f7dc4e4c";
 };
 in
 pkgs.stdenv.mkDerivation {
@@ -38,7 +38,7 @@ pkgs.stdenv.mkDerivation {
 
   postUnpack = ''
     cp -r ${objects-src}         $sourceRoot/data/object
-    cp -r ${title-sequences-src} $sourceRoot/data/title
+    cp -r ${title-sequences-src} $sourceRoot/data/sequence
   '';
   preFixup = "ln -s $out/share/openrct2 $out/bin/data";
 

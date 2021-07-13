@@ -1,5 +1,5 @@
 /*****************************************************************************
- * Copyright (c) 2014-2018 OpenRCT2 developers
+ * Copyright (c) 2014-2020 OpenRCT2 developers
  *
  * For a complete list of all authors, please refer to contributors.md
  * Interested in contributing? Visit https://github.com/OpenRCT2/OpenRCT2
@@ -11,6 +11,8 @@
 
 #include "../common.h"
 
+#include <memory>
+
 enum class ADVERTISE_STATUS
 {
     DISABLED,
@@ -18,7 +20,7 @@ enum class ADVERTISE_STATUS
     REGISTERED,
 };
 
-interface INetworkServerAdvertiser
+struct INetworkServerAdvertiser
 {
     virtual ~INetworkServerAdvertiser()
     {
@@ -28,4 +30,4 @@ interface INetworkServerAdvertiser
     virtual void Update() abstract;
 };
 
-INetworkServerAdvertiser* CreateServerAdvertiser(uint16_t port);
+std::unique_ptr<INetworkServerAdvertiser> CreateServerAdvertiser(uint16_t port);

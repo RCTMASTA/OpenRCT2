@@ -1,5 +1,5 @@
 /*****************************************************************************
- * Copyright (c) 2014-2018 OpenRCT2 developers
+ * Copyright (c) 2014-2020 OpenRCT2 developers
  *
  * For a complete list of all authors, please refer to contributors.md
  * Interested in contributing? Visit https://github.com/OpenRCT2/OpenRCT2
@@ -10,9 +10,10 @@
 #include "../../interface/Viewport.h"
 #include "../../paint/Paint.h"
 #include "../../paint/Supports.h"
-#include "../../world/Sprite.h"
+#include "../../world/Entity.h"
 #include "../Track.h"
 #include "../TrackPaint.h"
+#include "../Vehicle.h"
 
 struct haunted_house_bound_box
 {
@@ -31,33 +32,39 @@ static haunted_house_bound_box haunted_house_data[] = {
  * rct2: 0x0076F72C
  */
 static void paint_haunted_house_structure(
-    paint_session* session, uint8_t rideIndex, uint8_t direction, int8_t xOffset, int8_t yOffset, uint8_t part, uint16_t height)
+    paint_session* session, ride_id_t rideIndex, uint8_t direction, int8_t xOffset, int8_t yOffset, uint8_t part,
+    uint16_t height)
 {
     const TileElement* savedTileElement = static_cast<const TileElement*>(session->CurrentlyDrawnItem);
 
     uint8_t frameNum = 0;
 
-    Ride* ride = get_ride(rideIndex);
-    rct_ride_entry* rideEntry = get_ride_entry(ride->subtype);
+    auto ride = get_ride(rideIndex);
+    if (ride == nullptr)
+        return;
+
+    auto rideEntry = ride->GetRideEntry();
+    if (rideEntry == nullptr)
+        return;
 
     uint32_t baseImageId = rideEntry->vehicles[0].base_image_id;
 
-    if (ride->lifecycle_flags & RIDE_LIFECYCLE_ON_TRACK && ride->vehicles[0] != SPRITE_INDEX_NULL)
+    auto vehicle = GetEntity<Vehicle>(ride->vehicles[0]);
+    if (ride->lifecycle_flags & RIDE_LIFECYCLE_ON_TRACK && vehicle != nullptr)
     {
-        session->InteractionType = VIEWPORT_INTERACTION_ITEM_SPRITE;
-        rct_vehicle* vehicle = GET_VEHICLE(ride->vehicles[0]);
+        session->InteractionType = ViewportInteractionItem::Entity;
         session->CurrentlyDrawnItem = vehicle;
-        frameNum = vehicle->vehicle_sprite_type;
+        frameNum = vehicle->Pitch;
     }
 
     uint32_t imageId = (baseImageId + direction) | session->TrackColours[SCHEME_MISC];
     haunted_house_bound_box boundBox = haunted_house_data[part];
-    sub_98197C(
+    PaintAddImageAsParent(
         session, imageId, xOffset, yOffset, boundBox.length_x, boundBox.length_y, 127, height, boundBox.offset_x,
         boundBox.offset_y, height);
 
-    rct_drawpixelinfo* dpi = session->DPI;
-    if (dpi->zoom_level == 0 && frameNum != 0)
+    rct_drawpixelinfo* dpi = &session->DPI;
+    if (dpi->zoom_level <= 0 && frameNum != 0)
     {
         switch (direction)
         {
@@ -75,35 +82,37 @@ static void paint_haunted_house_structure(
                 break;
         }
         imageId = imageId | session->TrackColours[SCHEME_MISC];
-        sub_98199C(
+        PaintAddImageAsChild(
             session, imageId, xOffset, yOffset, boundBox.length_x, boundBox.length_y, 127, height, boundBox.offset_x,
             boundBox.offset_y, height);
     }
 
     session->CurrentlyDrawnItem = savedTileElement;
-    session->InteractionType = VIEWPORT_INTERACTION_ITEM_RIDE;
+    session->InteractionType = ViewportInteractionItem::Ride;
 }
 
 /**
  * rct2: 0x0076E9B0
  */
 static void paint_haunted_house(
-    paint_session* session, uint8_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
+    paint_session* session, ride_id_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
     const TileElement* tileElement)
 {
     trackSequence = track_map_3x3[direction][trackSequence];
 
     int32_t edges = edges_3x3[trackSequence];
-    Ride* ride = get_ride(rideIndex);
-    LocationXY16 position = session->MapPosition;
 
     wooden_a_supports_paint_setup(session, (direction & 1), 0, height, session->TrackColours[SCHEME_MISC], nullptr);
 
     track_paint_util_paint_floor(session, edges, session->TrackColours[SCHEME_TRACK], height, floorSpritesCork);
 
-    track_paint_util_paint_fences(
-        session, edges, position, tileElement, ride, session->TrackColours[SCHEME_MISC], height, fenceSpritesRope,
-        session->CurrentRotation);
+    auto ride = get_ride(rideIndex);
+    if (ride != nullptr)
+    {
+        track_paint_util_paint_fences(
+            session, edges, session->MapPosition, tileElement, ride, session->TrackColours[SCHEME_MISC], height,
+            fenceSpritesRope, session->CurrentRotation);
+    }
 
     switch (trackSequence)
     {
@@ -147,9 +156,9 @@ static void paint_haunted_house(
 /**
  * rct2: 0x0076E7B0
  */
-TRACK_PAINT_FUNCTION get_track_paint_function_haunted_house(int32_t trackType, int32_t direction)
+TRACK_PAINT_FUNCTION get_track_paint_function_haunted_house(int32_t trackType)
 {
-    if (trackType != FLAT_TRACK_ELEM_3_X_3)
+    if (trackType != TrackElemType::FlatTrack3x3)
     {
         return nullptr;
     }

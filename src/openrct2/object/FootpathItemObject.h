@@ -1,5 +1,5 @@
 /*****************************************************************************
- * Copyright (c) 2014-2018 OpenRCT2 developers
+ * Copyright (c) 2014-2020 OpenRCT2 developers
  *
  * For a complete list of all authors, please refer to contributors.md
  * Interested in contributing? Visit https://github.com/OpenRCT2/OpenRCT2
@@ -15,7 +15,7 @@
 class FootpathItemObject final : public SceneryObject
 {
 private:
-    rct_scenery_entry _legacyType = {};
+    PathBitEntry _legacyType = {};
 
 public:
     explicit FootpathItemObject(const rct_object_entry& entry)
@@ -28,8 +28,8 @@ public:
         return &_legacyType;
     }
 
-    void ReadLegacy(IReadObjectContext* context, IStream* stream) override;
-    void ReadJson(IReadObjectContext* context, const json_t* root) override;
+    void ReadLegacy(IReadObjectContext* context, OpenRCT2::IStream* stream) override;
+    void ReadJson(IReadObjectContext* context, json_t& root) override;
     void Load() override;
     void Unload() override;
 

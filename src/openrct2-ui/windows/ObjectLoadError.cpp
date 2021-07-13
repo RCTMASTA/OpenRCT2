@@ -1,5 +1,5 @@
 /*****************************************************************************
- * Copyright (c) 2014-2018 OpenRCT2 developers
+ * Copyright (c) 2014-2020 OpenRCT2 developers
  *
  * For a complete list of all authors, please refer to contributors.md
  * Interested in contributing? Visit https://github.com/OpenRCT2/OpenRCT2
@@ -7,14 +7,245 @@
  * OpenRCT2 is licensed under the GNU General Public License version 3.
  *****************************************************************************/
 
+#include <mutex>
 #include <openrct2-ui/interface/Widget.h>
 #include <openrct2-ui/windows/Window.h>
+#include <openrct2/Context.h>
+#include <openrct2/core/Console.hpp>
+#include <openrct2/core/Http.h>
+#include <openrct2/core/Json.hpp>
+#include <openrct2/core/String.hpp>
 #include <openrct2/localisation/Localisation.h>
 #include <openrct2/object/ObjectList.h>
 #include <openrct2/object/ObjectManager.h>
+#include <openrct2/object/ObjectRepository.h>
 #include <openrct2/platform/platform.h>
+#include <openrct2/windows/Intent.h>
 #include <string>
 #include <vector>
+
+#ifndef DISABLE_HTTP
+
+class ObjectDownloader
+{
+private:
+    static constexpr auto OPENRCT2_API_LEGACY_OBJECT_URL = "https://api.openrct2.io/objects/legacy/";
+
+    struct DownloadStatusInfo
+    {
+        std::string Name;
+        std::string Source;
+        size_t Count{};
+        size_t Total{};
+
+        bool operator==(const DownloadStatusInfo& rhs)
+        {
+            return Name == rhs.Name && Source == rhs.Source && Count == rhs.Count && Total == rhs.Total;
+        }
+        bool operator!=(const DownloadStatusInfo& rhs)
+        {
+            return !(*this == rhs);
+        }
+    };
+
+    std::vector<rct_object_entry> _entries;
+    std::vector<rct_object_entry> _downloadedEntries;
+    size_t _currentDownloadIndex{};
+    std::mutex _downloadedEntriesMutex;
+    std::mutex _queueMutex;
+    bool _nextDownloadQueued{};
+
+    DownloadStatusInfo _lastDownloadStatusInfo;
+    DownloadStatusInfo _downloadStatusInfo;
+    std::mutex _downloadStatusInfoMutex;
+    std::string _lastDownloadSource;
+
+    // TODO static due to INTENT_EXTRA_CALLBACK not allowing a std::function
+    inline static bool _downloadingObjects;
+
+public:
+    void Begin(const std::vector<rct_object_entry>& entries)
+    {
+        _lastDownloadStatusInfo = {};
+        _downloadStatusInfo = {};
+        _lastDownloadSource = {};
+        _entries = entries;
+        _currentDownloadIndex = 0;
+        _downloadingObjects = true;
+        QueueNextDownload();
+    }
+
+    bool IsDownloading() const
+    {
+        return _downloadingObjects;
+    }
+
+    std::vector<rct_object_entry> GetDownloadedEntries()
+    {
+        std::lock_guard<std::mutex> guard(_downloadedEntriesMutex);
+        return _downloadedEntries;
+    }
+
+    void Update()
+    {
+        std::lock_guard guard(_queueMutex);
+        if (_nextDownloadQueued)
+        {
+            _nextDownloadQueued = false;
+            NextDownload();
+        }
+        UpdateStatusBox();
+    }
+
+private:
+    void UpdateStatusBox()
+    {
+        std::lock_guard<std::mutex> guard(_downloadStatusInfoMutex);
+        if (_lastDownloadStatusInfo != _downloadStatusInfo)
+        {
+            _lastDownloadStatusInfo = _downloadStatusInfo;
+
+            if (_downloadStatusInfo == DownloadStatusInfo())
+            {
+                context_force_close_window_by_class(WC_NETWORK_STATUS);
+            }
+            else
+            {
+                char str_downloading_objects[256]{};
+                Formatter ft;
+                if (_downloadStatusInfo.Source.empty())
+                {
+                    ft.Add<int16_t>(static_cast<int16_t>(_downloadStatusInfo.Count));
+                    ft.Add<int16_t>(static_cast<int16_t>(_downloadStatusInfo.Total));
+                    ft.Add<char*>(_downloadStatusInfo.Name.c_str());
+                    format_string(str_downloading_objects, sizeof(str_downloading_objects), STR_DOWNLOADING_OBJECTS, ft.Data());
+                }
+                else
+                {
+                    ft.Add<char*>(_downloadStatusInfo.Name.c_str());
+                    ft.Add<char*>(_downloadStatusInfo.Source.c_str());
+                    ft.Add<int16_t>(static_cast<int16_t>(_downloadStatusInfo.Count));
+                    ft.Add<int16_t>(static_cast<int16_t>(_downloadStatusInfo.Total));
+                    format_string(
+                        str_downloading_objects, sizeof(str_downloading_objects), STR_DOWNLOADING_OBJECTS_FROM, ft.Data());
+                }
+
+                auto intent = Intent(WC_NETWORK_STATUS);
+                intent.putExtra(INTENT_EXTRA_MESSAGE, std::string(str_downloading_objects));
+                intent.putExtra(INTENT_EXTRA_CALLBACK, []() -> void { _downloadingObjects = false; });
+                context_open_intent(&intent);
+            }
+        }
+    }
+
+    void UpdateProgress(const DownloadStatusInfo& info)
+    {
+        std::lock_guard<std::mutex> guard(_downloadStatusInfoMutex);
+        _downloadStatusInfo = info;
+    }
+
+    void QueueNextDownload()
+    {
+        std::lock_guard guard(_queueMutex);
+        _nextDownloadQueued = true;
+    }
+
+    void DownloadObject(const rct_object_entry& entry, const std::string name, const std::string url)
+    {
+        try
+        {
+            Console::WriteLine("Downloading %s", url.c_str());
+            Http::Request req;
+            req.method = Http::Method::GET;
+            req.url = url;
+            Http::DoAsync(req, [this, entry, name](Http::Response response) {
+                if (response.status == Http::Status::Ok)
+                {
+                    // Check that download operation hasn't been cancelled
+                    if (_downloadingObjects)
+                    {
+                        auto data = reinterpret_cast<uint8_t*>(response.body.data());
+                        auto dataLen = response.body.size();
+
+                        auto& objRepo = OpenRCT2::GetContext()->GetObjectRepository();
+                        objRepo.AddObjectFromFile(name, data, dataLen);
+
+                        std::lock_guard<std::mutex> guard(_downloadedEntriesMutex);
+                        _downloadedEntries.push_back(entry);
+                    }
+                }
+                else
+                {
+                    Console::Error::WriteLine("  Failed to download %s", name.c_str());
+                }
+                QueueNextDownload();
+            });
+        }
+        catch (const std::exception&)
+        {
+            Console::Error::WriteLine("  Failed to download %s", name.c_str());
+            QueueNextDownload();
+        }
+    }
+
+    void NextDownload()
+    {
+        if (!_downloadingObjects || _currentDownloadIndex >= _entries.size())
+        {
+            // Finished...
+            _downloadingObjects = false;
+            UpdateProgress({});
+            return;
+        }
+
+        auto& entry = _entries[_currentDownloadIndex];
+        auto name = String::Trim(std::string(entry.name, sizeof(entry.name)));
+        log_verbose("Downloading object: [%s]:", name.c_str());
+        _currentDownloadIndex++;
+        UpdateProgress({ name, _lastDownloadSource, _currentDownloadIndex, _entries.size() });
+        try
+        {
+            Http::Request req;
+            req.method = Http::Method::GET;
+            req.url = OPENRCT2_API_LEGACY_OBJECT_URL + name;
+            Http::DoAsync(req, [this, entry, name](Http::Response response) {
+                if (response.status == Http::Status::Ok)
+                {
+                    auto jresponse = Json::FromString(response.body);
+                    if (jresponse.is_object())
+                    {
+                        auto objName = Json::GetString(jresponse["name"]);
+                        auto source = Json::GetString(jresponse["source"]);
+                        auto downloadLink = Json::GetString(jresponse["download"]);
+                        if (!downloadLink.empty())
+                        {
+                            _lastDownloadSource = source;
+                            UpdateProgress({ name, source, _currentDownloadIndex, _entries.size() });
+                            DownloadObject(entry, objName, downloadLink);
+                        }
+                    }
+                }
+                else if (response.status == Http::Status::NotFound)
+                {
+                    Console::Error::WriteLine("  %s not found", name.c_str());
+                    QueueNextDownload();
+                }
+                else
+                {
+                    Console::Error::WriteLine(
+                        "  %s query failed (status %d)", name.c_str(), static_cast<int32_t>(response.status));
+                    QueueNextDownload();
+                }
+            });
+        }
+        catch (const std::exception&)
+        {
+            Console::Error::WriteLine("  Failed to query %s", name.c_str());
+        }
+    }
+};
+
+#endif
 
 // clang-format off
 enum WINDOW_OBJECT_LOAD_ERROR_WIDGET_IDX {
@@ -26,27 +257,29 @@ enum WINDOW_OBJECT_LOAD_ERROR_WIDGET_IDX {
     WIDX_COLUMN_OBJECT_TYPE,
     WIDX_SCROLL,
     WIDX_COPY_CURRENT,
-    WIDX_COPY_ALL
+    WIDX_COPY_ALL,
+    WIDX_DOWNLOAD_ALL
 };
 
-#define WW 450
-#define WH 400
-#define WW_LESS_PADDING (WW - 5)
-#define NAME_COL_LEFT 4
-#define SOURCE_COL_LEFT ((WW_LESS_PADDING / 4) + 1)
-#define TYPE_COL_LEFT (5 * WW_LESS_PADDING / 8 + 1)
-#define LIST_ITEM_HEIGHT 10
+static constexpr const rct_string_id WINDOW_TITLE = STR_OBJECT_LOAD_ERROR_TITLE;
+static constexpr const int32_t WW = 450;
+static constexpr const int32_t WH = 400;
+static constexpr const int32_t WW_LESS_PADDING = WW - 5;
+constexpr int32_t NAME_COL_LEFT = 4;
+constexpr int32_t SOURCE_COL_LEFT = (WW_LESS_PADDING / 4) + 1;
+constexpr int32_t TYPE_COL_LEFT = 5 * WW_LESS_PADDING / 8 + 1;
 
 static rct_widget window_object_load_error_widgets[] = {
-    { WWT_FRAME,             0, 0,               WW - 1,                0,          WH - 1,     STR_NONE,                       STR_NONE },                // Background
-    { WWT_CAPTION,           0, 1,               WW - 2,                1,          14,         STR_OBJECT_LOAD_ERROR_TITLE,    STR_WINDOW_TITLE_TIP },    // Title bar
-    { WWT_CLOSEBOX,          0, WW - 13,         WW - 3,                2,          13,         STR_CLOSE_X,                    STR_CLOSE_WINDOW_TIP },    // Close button
-    { WWT_TABLE_HEADER,      0, NAME_COL_LEFT,   SOURCE_COL_LEFT - 1,   57,         70,         STR_OBJECT_NAME,                STR_NONE },                // 'Object name' header
-    { WWT_TABLE_HEADER,      0, SOURCE_COL_LEFT, TYPE_COL_LEFT - 1,     57,         70,         STR_OBJECT_SOURCE,              STR_NONE },                // 'Object source' header
-    { WWT_TABLE_HEADER,      0, TYPE_COL_LEFT,   WW_LESS_PADDING - 1,   57,         70,         STR_OBJECT_TYPE,                STR_NONE },                // 'Object type' header
-    { WWT_SCROLL,            0, 4,               WW_LESS_PADDING,       70,         WH - 33,    SCROLL_VERTICAL,                STR_NONE },                // Scrollable list area
-    { WWT_BUTTON,            0, 45,              220,                   WH - 23,    WH - 10,    STR_COPY_SELECTED,              STR_NONE },                // Copy selected btn
-    { WWT_BUTTON,            0, 230,             400,                   WH - 23,    WH - 10,    STR_COPY_ALL,                   STR_NONE },                // Copy all btn
+    WINDOW_SHIM(WINDOW_TITLE, WW, WH),
+    MakeWidget({  NAME_COL_LEFT,  57}, {108,  14}, WindowWidgetType::TableHeader, WindowColour::Primary, STR_OBJECT_NAME                                   ), // 'Object name' header
+    MakeWidget({SOURCE_COL_LEFT,  57}, {166,  14}, WindowWidgetType::TableHeader, WindowColour::Primary, STR_OBJECT_SOURCE                                 ), // 'Object source' header
+    MakeWidget({  TYPE_COL_LEFT,  57}, {166,  14}, WindowWidgetType::TableHeader, WindowColour::Primary, STR_OBJECT_TYPE                                   ), // 'Object type' header
+    MakeWidget({  NAME_COL_LEFT,  70}, {442, 298}, WindowWidgetType::Scroll,       WindowColour::Primary, SCROLL_VERTICAL                                   ), // Scrollable list area
+    MakeWidget({  NAME_COL_LEFT, 377}, {145,  14}, WindowWidgetType::Button,       WindowColour::Primary, STR_COPY_SELECTED,           STR_COPY_SELECTED_TIP), // Copy selected button
+    MakeWidget({            152, 377}, {145,  14}, WindowWidgetType::Button,       WindowColour::Primary, STR_COPY_ALL,                STR_COPY_ALL_TIP     ), // Copy all button
+#ifndef DISABLE_HTTP
+    MakeWidget({            300, 377}, {146,  14}, WindowWidgetType::Button,       WindowColour::Primary, STR_DOWNLOAD_ALL,            STR_DOWNLOAD_ALL_TIP ), // Download all button
+#endif
     { WIDGETS_END },
 };
 
@@ -55,46 +288,35 @@ static void window_object_load_error_close(rct_window *w);
 static void window_object_load_error_update(rct_window *w);
 static void window_object_load_error_mouseup(rct_window *w, rct_widgetindex widgetIndex);
 static void window_object_load_error_scrollgetsize(rct_window *w, int32_t scrollIndex, int32_t *width, int32_t *height);
-static void window_object_load_error_scrollmouseover(rct_window *w, int32_t scrollIndex, int32_t x, int32_t y);
-static void window_object_load_error_scrollmousedown(rct_window *w, int32_t scrollIndex, int32_t x, int32_t y);
+static void window_object_load_error_scrollmouseover(rct_window *w, int32_t scrollIndex, const ScreenCoordsXY& screenCoords);
+static void window_object_load_error_scrollmousedown(rct_window *w, int32_t scrollIndex, const ScreenCoordsXY& screenCoords);
 static void window_object_load_error_paint(rct_window *w, rct_drawpixelinfo *dpi);
 static void window_object_load_error_scrollpaint(rct_window *w, rct_drawpixelinfo *dpi, int32_t scrollIndex);
+#ifndef DISABLE_HTTP
+static void window_object_load_error_download_all(rct_window* w);
+static void window_object_load_error_update_list(rct_window* w);
+#endif
 
-static rct_window_event_list window_object_load_error_events = {
-    window_object_load_error_close,
-    window_object_load_error_mouseup,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    window_object_load_error_update,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    window_object_load_error_scrollgetsize,
-    window_object_load_error_scrollmousedown,
-    nullptr,
-    window_object_load_error_scrollmouseover,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    window_object_load_error_paint,
-    window_object_load_error_scrollpaint
-};
+static rct_window_event_list window_object_load_error_events([](auto& events)
+{
+    events.close = &window_object_load_error_close;
+    events.mouse_up = &window_object_load_error_mouseup;
+    events.update = &window_object_load_error_update;
+    events.get_scroll_size = &window_object_load_error_scrollgetsize;
+    events.scroll_mousedown = &window_object_load_error_scrollmousedown;
+    events.scroll_mouseover = &window_object_load_error_scrollmouseover;
+    events.paint = &window_object_load_error_paint;
+    events.scroll_paint = &window_object_load_error_scrollpaint;
+});
 // clang-format on
 
 static std::vector<rct_object_entry> _invalid_entries;
 static int32_t highlighted_index = -1;
 static std::string file_path;
+#ifndef DISABLE_HTTP
+static ObjectDownloader _objDownloader;
+static bool _updatedListAfterDownload;
+#endif
 
 /**
  *  Returns an rct_string_id that represents an rct_object_entry's type.
@@ -105,37 +327,36 @@ static std::string file_path;
 static rct_string_id get_object_type_string(const rct_object_entry* entry)
 {
     rct_string_id result;
-    uint8_t objectType = object_entry_get_type(entry);
-    switch (objectType)
+    switch (entry->GetType())
     {
-        case OBJECT_TYPE_RIDE:
+        case ObjectType::Ride:
             result = STR_OBJECT_SELECTION_RIDE_VEHICLES_ATTRACTIONS;
             break;
-        case OBJECT_TYPE_SMALL_SCENERY:
+        case ObjectType::SmallScenery:
             result = STR_OBJECT_SELECTION_SMALL_SCENERY;
             break;
-        case OBJECT_TYPE_LARGE_SCENERY:
+        case ObjectType::LargeScenery:
             result = STR_OBJECT_SELECTION_LARGE_SCENERY;
             break;
-        case OBJECT_TYPE_WALLS:
+        case ObjectType::Walls:
             result = STR_OBJECT_SELECTION_WALLS_FENCES;
             break;
-        case OBJECT_TYPE_BANNERS:
+        case ObjectType::Banners:
             result = STR_OBJECT_SELECTION_PATH_SIGNS;
             break;
-        case OBJECT_TYPE_PATHS:
+        case ObjectType::Paths:
             result = STR_OBJECT_SELECTION_FOOTPATHS;
             break;
-        case OBJECT_TYPE_PATH_BITS:
+        case ObjectType::PathBits:
             result = STR_OBJECT_SELECTION_PATH_EXTRAS;
             break;
-        case OBJECT_TYPE_SCENERY_GROUP:
+        case ObjectType::SceneryGroup:
             result = STR_OBJECT_SELECTION_SCENERY_GROUPS;
             break;
-        case OBJECT_TYPE_PARK_ENTRANCE:
+        case ObjectType::ParkEntrance:
             result = STR_OBJECT_SELECTION_PARK_ENTRANCE;
             break;
-        case OBJECT_TYPE_WATER:
+        case ObjectType::Water:
             result = STR_OBJECT_SELECTION_WATER;
             break;
         default:
@@ -173,7 +394,7 @@ static void copy_object_names_to_clipboard(rct_window* w)
         }
 
         strncat(buffer, _invalid_entries[i].name, nameLength);
-        strncat(buffer, PLATFORM_NEWLINE, line_sep_len);
+        strncat(buffer, PLATFORM_NEWLINE, buffer_len - strlen(buffer) - 1);
     }
 
     platform_place_string_on_clipboard(buffer);
@@ -188,22 +409,23 @@ rct_window* window_object_load_error_open(utf8* path, size_t numMissingObjects, 
     rct_window* window = window_bring_to_front_by_class(WC_OBJECT_LOAD_ERROR);
     if (window == nullptr)
     {
-        window = window_create_centred(WW, WH, &window_object_load_error_events, WC_OBJECT_LOAD_ERROR, 0);
+        window = WindowCreateCentred(WW, WH, &window_object_load_error_events, WC_OBJECT_LOAD_ERROR, 0);
 
         window->widgets = window_object_load_error_widgets;
-        window->enabled_widgets = (1 << WIDX_CLOSE) | (1 << WIDX_COPY_CURRENT) | (1 << WIDX_COPY_ALL);
+        window->enabled_widgets = (1ULL << WIDX_CLOSE) | (1ULL << WIDX_COPY_CURRENT) | (1ULL << WIDX_COPY_ALL)
+            | (1ULL << WIDX_DOWNLOAD_ALL);
 
-        window_init_scroll_widgets(window);
+        WindowInitScrollWidgets(window);
         window->colours[0] = COLOUR_LIGHT_BLUE;
         window->colours[1] = COLOUR_LIGHT_BLUE;
         window->colours[2] = COLOUR_LIGHT_BLUE;
     }
 
     // Refresh list items and path
-    window->no_list_items = (uint16_t)numMissingObjects;
+    window->no_list_items = static_cast<uint16_t>(numMissingObjects);
     file_path = path;
 
-    window_invalidate(window);
+    window->Invalidate();
     return window;
 }
 
@@ -215,12 +437,33 @@ static void window_object_load_error_close(rct_window* w)
 
 static void window_object_load_error_update(rct_window* w)
 {
+    w->frame_no++;
+
     // Check if the mouse is hovering over the list
-    if (!widget_is_highlighted(w, WIDX_SCROLL))
+    if (!WidgetIsHighlighted(w, WIDX_SCROLL))
     {
         highlighted_index = -1;
         widget_invalidate(w, WIDX_SCROLL);
     }
+
+#ifndef DISABLE_HTTP
+    _objDownloader.Update();
+
+    // Remove downloaded objects from our invalid entry list
+    if (_objDownloader.IsDownloading())
+    {
+        // Don't do this too often as it isn't particularly efficient
+        if (w->frame_no % 64 == 0)
+        {
+            window_object_load_error_update_list(w);
+        }
+    }
+    else if (!_updatedListAfterDownload)
+    {
+        window_object_load_error_update_list(w);
+        _updatedListAfterDownload = true;
+    }
+#endif
 }
 
 static void window_object_load_error_mouseup(rct_window* w, rct_widgetindex widgetIndex)
@@ -245,14 +488,19 @@ static void window_object_load_error_mouseup(rct_window* w, rct_widgetindex widg
         case WIDX_COPY_ALL:
             copy_object_names_to_clipboard(w);
             break;
+#ifndef DISABLE_HTTP
+        case WIDX_DOWNLOAD_ALL:
+            window_object_load_error_download_all(w);
+            break;
+#endif
     }
 }
 
-static void window_object_load_error_scrollmouseover(rct_window* w, int32_t scrollIndex, int32_t x, int32_t y)
+static void window_object_load_error_scrollmouseover(rct_window* w, int32_t scrollIndex, const ScreenCoordsXY& screenCoords)
 {
     // Highlight item that the cursor is over, or remove highlighting if none
     int32_t selected_item;
-    selected_item = y / SCROLLABLE_ROW_HEIGHT;
+    selected_item = screenCoords.y / SCROLLABLE_ROW_HEIGHT;
     if (selected_item < 0 || selected_item >= w->no_list_items)
         highlighted_index = -1;
     else
@@ -274,10 +522,10 @@ static void window_object_load_error_select_element_from_list(rct_window* w, int
     widget_invalidate(w, WIDX_SCROLL);
 }
 
-static void window_object_load_error_scrollmousedown(rct_window* w, int32_t scrollIndex, int32_t x, int32_t y)
+static void window_object_load_error_scrollmousedown(rct_window* w, int32_t scrollIndex, const ScreenCoordsXY& screenCoords)
 {
     int32_t selected_item;
-    selected_item = y / SCROLLABLE_ROW_HEIGHT;
+    selected_item = screenCoords.y / SCROLLABLE_ROW_HEIGHT;
     window_object_load_error_select_element_from_list(w, selected_item);
 }
 
@@ -288,50 +536,83 @@ static void window_object_load_error_scrollgetsize(rct_window* w, int32_t scroll
 
 static void window_object_load_error_paint(rct_window* w, rct_drawpixelinfo* dpi)
 {
-    window_draw_widgets(w, dpi);
+    WindowDrawWidgets(w, dpi);
 
     // Draw explanatory message
-    set_format_arg(0, rct_string_id, STR_OBJECT_ERROR_WINDOW_EXPLANATION);
-    gfx_draw_string_left_wrapped(dpi, gCommonFormatArgs, w->x + 5, w->y + 18, WW - 10, STR_BLACK_STRING, COLOUR_BLACK);
+    auto ft = Formatter();
+    ft.Add<rct_string_id>(STR_OBJECT_ERROR_WINDOW_EXPLANATION);
+    DrawTextWrapped(dpi, w->windowPos + ScreenCoordsXY{ 5, 18 }, WW - 10, STR_BLACK_STRING, ft);
 
     // Draw file name
-    set_format_arg(0, rct_string_id, STR_OBJECT_ERROR_WINDOW_FILE);
-    set_format_arg(2, utf8*, file_path.c_str());
-    gfx_draw_string_left_clipped(dpi, STR_BLACK_STRING, gCommonFormatArgs, COLOUR_BLACK, w->x + 5, w->y + 43, WW - 5);
+    ft = Formatter();
+    ft.Add<rct_string_id>(STR_OBJECT_ERROR_WINDOW_FILE);
+    ft.Add<utf8*>(file_path.c_str());
+    DrawTextEllipsised(dpi, { w->windowPos.x + 5, w->windowPos.y + 43 }, WW - 5, STR_BLACK_STRING, ft);
 }
 
 static void window_object_load_error_scrollpaint(rct_window* w, rct_drawpixelinfo* dpi, int32_t scrollIndex)
 {
-    gfx_fill_rect(dpi, dpi->x, dpi->y, dpi->x + dpi->width - 1, dpi->y + dpi->height - 1, ColourMapA[w->colours[1]].mid_light);
-    const int32_t list_width = w->widgets[WIDX_SCROLL].right - w->widgets[WIDX_SCROLL].left;
+    auto dpiCoords = ScreenCoordsXY{ dpi->x, dpi->y };
+    gfx_fill_rect(
+        dpi, { dpiCoords, dpiCoords + ScreenCoordsXY{ dpi->width - 1, dpi->height - 1 } }, ColourMapA[w->colours[1]].mid_light);
+    const int32_t list_width = w->widgets[WIDX_SCROLL].width();
 
     for (int32_t i = 0; i < w->no_list_items; i++)
     {
-        int32_t y = i * SCROLLABLE_ROW_HEIGHT;
-        if (y > dpi->y + dpi->height)
+        ScreenCoordsXY screenCoords;
+        screenCoords.y = i * SCROLLABLE_ROW_HEIGHT;
+        if (screenCoords.y > dpi->y + dpi->height)
             break;
 
-        if (y + SCROLLABLE_ROW_HEIGHT < dpi->y)
+        if (screenCoords.y + SCROLLABLE_ROW_HEIGHT < dpi->y)
             continue;
 
+        auto screenRect = ScreenRect{ { 0, screenCoords.y }, { list_width, screenCoords.y + SCROLLABLE_ROW_HEIGHT - 1 } };
         // If hovering over item, change the color and fill the backdrop.
         if (i == w->selected_list_item)
-            gfx_fill_rect(dpi, 0, y, list_width, y + SCROLLABLE_ROW_HEIGHT - 1, ColourMapA[w->colours[1]].darker);
+            gfx_fill_rect(dpi, screenRect, ColourMapA[w->colours[1]].darker);
         else if (i == highlighted_index)
-            gfx_fill_rect(dpi, 0, y, list_width, y + SCROLLABLE_ROW_HEIGHT - 1, ColourMapA[w->colours[1]].mid_dark);
+            gfx_fill_rect(dpi, screenRect, ColourMapA[w->colours[1]].mid_dark);
         else if ((i & 1) != 0) // odd / even check
-            gfx_fill_rect(dpi, 0, y, list_width, y + SCROLLABLE_ROW_HEIGHT - 1, ColourMapA[w->colours[1]].light);
+            gfx_fill_rect(dpi, screenRect, ColourMapA[w->colours[1]].light);
 
         // Draw the actual object entry's name...
-        gfx_draw_string(dpi, strndup(_invalid_entries[i].name, 8), COLOUR_DARK_GREEN, NAME_COL_LEFT - 3, y);
+        screenCoords.x = NAME_COL_LEFT - 3;
+        gfx_draw_string(dpi, screenCoords, strndup(_invalid_entries[i].name, 8), { COLOUR_DARK_GREEN });
 
         // ... source game ...
-        rct_string_id sourceStringId = object_manager_get_source_game_string(
-            object_entry_get_source_game_legacy(&_invalid_entries[i]));
-        gfx_draw_string_left(dpi, sourceStringId, nullptr, COLOUR_DARK_GREEN, SOURCE_COL_LEFT - 3, y);
+        rct_string_id sourceStringId = object_manager_get_source_game_string(_invalid_entries[i].GetSourceGame());
+        DrawTextBasic(dpi, { SOURCE_COL_LEFT - 3, screenCoords.y }, sourceStringId, {}, { COLOUR_DARK_GREEN });
 
         // ... and type
         rct_string_id type = get_object_type_string(&_invalid_entries[i]);
-        gfx_draw_string_left(dpi, type, nullptr, COLOUR_DARK_GREEN, TYPE_COL_LEFT - 3, y);
+        DrawTextBasic(dpi, { TYPE_COL_LEFT - 3, screenCoords.y }, type, {}, { COLOUR_DARK_GREEN });
     }
 }
+
+#ifndef DISABLE_HTTP
+
+static void window_object_load_error_download_all(rct_window* w)
+{
+    if (!_objDownloader.IsDownloading())
+    {
+        _updatedListAfterDownload = false;
+        _objDownloader.Begin(_invalid_entries);
+    }
+}
+
+static void window_object_load_error_update_list(rct_window* w)
+{
+    auto entries = _objDownloader.GetDownloadedEntries();
+    for (auto& de : entries)
+    {
+        _invalid_entries.erase(
+            std::remove_if(
+                _invalid_entries.begin(), _invalid_entries.end(),
+                [de](const rct_object_entry& e) { return std::memcmp(de.name, e.name, sizeof(e.name)) == 0; }),
+            _invalid_entries.end());
+        w->no_list_items = static_cast<uint16_t>(_invalid_entries.size());
+    }
+}
+
+#endif

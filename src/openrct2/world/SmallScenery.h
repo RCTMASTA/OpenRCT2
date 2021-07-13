@@ -1,5 +1,5 @@
 /*****************************************************************************
- * Copyright (c) 2014-2018 OpenRCT2 developers
+ * Copyright (c) 2014-2020 OpenRCT2 developers
  *
  * For a complete list of all authors, please refer to contributors.md
  * Interested in contributing? Visit https://github.com/OpenRCT2/OpenRCT2
@@ -44,6 +44,8 @@ enum SMALL_SCENERY_FLAGS
     SMALL_SCENERY_FLAG_THREE_QUARTERS = (1 << 25),       // 0x2000000
     SMALL_SCENERY_FLAG_PAINT_SUPPORTS = (1 << 26),       // 0x4000000; used for scenery items which are support structures
     SMALL_SCENERY_FLAG27 = (1 << 27),                    // 0x8000000
+
+    SMALL_SCENERY_FLAG_IS_TREE = (1 << 28), // Added by OpenRCT2
 };
 
 enum
@@ -51,5 +53,5 @@ enum
     MAP_ELEM_SMALL_SCENERY_COLOUR_FLAG_NEEDS_SUPPORTS = (1 << 5),
 };
 
-bool scenery_small_entry_has_flag(const rct_scenery_entry* sceneryEntry, uint32_t flags);
-rct_scenery_entry* get_small_scenery_entry(int32_t entryIndex);
+bool scenery_small_entry_has_flag(const SmallSceneryEntry* sceneryEntry, uint32_t flags);
+SmallSceneryEntry* get_small_scenery_entry(ObjectEntryIndex entryIndex);

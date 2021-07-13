@@ -1,5 +1,5 @@
 /*****************************************************************************
- * Copyright (c) 2014-2018 OpenRCT2 developers
+ * Copyright (c) 2014-2020 OpenRCT2 developers
  *
  * For a complete list of all authors, please refer to contributors.md
  * Interested in contributing? Visit https://github.com/OpenRCT2/OpenRCT2
@@ -44,12 +44,12 @@ bool NetworkKey::Generate()
     }
 }
 
-bool NetworkKey::LoadPrivate(IStream* stream)
+bool NetworkKey::LoadPrivate(OpenRCT2::IStream* stream)
 {
     Guard::ArgumentNotNull(stream);
 
-    size_t size = (size_t)stream->GetLength();
-    if (size == (size_t)-1)
+    size_t size = static_cast<size_t>(stream->GetLength());
+    if (size == static_cast<size_t>(-1))
     {
         log_error("unknown size, refusing to load key");
         return false;
@@ -76,12 +76,12 @@ bool NetworkKey::LoadPrivate(IStream* stream)
     }
 }
 
-bool NetworkKey::LoadPublic(IStream* stream)
+bool NetworkKey::LoadPublic(OpenRCT2::IStream* stream)
 {
     Guard::ArgumentNotNull(stream);
 
-    size_t size = (size_t)stream->GetLength();
-    if (size == (size_t)-1)
+    size_t size = static_cast<size_t>(stream->GetLength());
+    if (size == static_cast<size_t>(-1))
     {
         log_error("unknown size, refusing to load key");
         return false;
@@ -108,7 +108,7 @@ bool NetworkKey::LoadPublic(IStream* stream)
     }
 }
 
-bool NetworkKey::SavePrivate(IStream* stream)
+bool NetworkKey::SavePrivate(OpenRCT2::IStream* stream)
 {
     try
     {
@@ -127,7 +127,7 @@ bool NetworkKey::SavePrivate(IStream* stream)
     }
 }
 
-bool NetworkKey::SavePublic(IStream* stream)
+bool NetworkKey::SavePublic(OpenRCT2::IStream* stream)
 {
     try
     {
@@ -194,32 +194,27 @@ std::string NetworkKey::PublicKeyHash()
     return nullptr;
 }
 
-bool NetworkKey::Sign(const uint8_t* md, const size_t len, char** signature, size_t* out_size)
+bool NetworkKey::Sign(const uint8_t* md, const size_t len, std::vector<uint8_t>& signature)
 {
     try
     {
         auto rsa = Crypt::CreateRSA();
-        auto sig = rsa->SignData(*_key, md, len);
-        *out_size = sig.size();
-        *signature = new char[sig.size()];
-        std::memcpy(*signature, sig.data(), sig.size());
+        signature = rsa->SignData(*_key, md, len);
         return true;
     }
     catch (const std::exception& e)
     {
         log_error("NetworkKey::Sign failed: %s", e.what());
-        *signature = nullptr;
-        *out_size = 0;
         return false;
     }
 }
 
-bool NetworkKey::Verify(const uint8_t* md, const size_t len, const char* sig, const size_t siglen)
+bool NetworkKey::Verify(const uint8_t* md, const size_t len, const std::vector<uint8_t>& signature)
 {
     try
     {
         auto rsa = Crypt::CreateRSA();
-        return rsa->VerifyData(*_key, md, len, sig, siglen);
+        return rsa->VerifyData(*_key, md, len, signature.data(), signature.size());
     }
     catch (const std::exception& e)
     {

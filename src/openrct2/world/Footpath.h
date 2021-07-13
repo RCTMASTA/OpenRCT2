@@ -1,5 +1,5 @@
 /*****************************************************************************
- * Copyright (c) 2014-2018 OpenRCT2 developers
+ * Copyright (c) 2014-2020 OpenRCT2 developers
  *
  * For a complete list of all authors, please refer to contributors.md
  * Interested in contributing? Visit https://github.com/OpenRCT2/OpenRCT2
@@ -7,8 +7,7 @@
  * OpenRCT2 is licensed under the GNU General Public License version 3.
  *****************************************************************************/
 
-#ifndef _WORLD_FOOTPATH_H_
-#define _WORLD_FOOTPATH_H_
+#pragma once
 
 #include "../common.h"
 #include "../interface/Viewport.h"
@@ -21,20 +20,65 @@ enum
     PROVISIONAL_PATH_FLAG_2 = (1 << 2),
 };
 
+constexpr auto FootpathMaxHeight = 248 * COORDS_Z_STEP;
+constexpr auto FootpathMinHeight = 2 * COORDS_Z_STEP;
+constexpr auto PATH_HEIGHT_STEP = 2 * COORDS_Z_STEP;
+constexpr auto PATH_CLEARANCE = 4 * COORDS_Z_STEP;
+
 #define FOOTPATH_ELEMENT_INSERT_QUEUE 0x80
+
+using PathSurfaceIndex = uint16_t;
+constexpr PathSurfaceIndex PATH_SURFACE_INDEX_NULL = static_cast<PathSurfaceIndex>(-1);
+
+using PathRailingsIndex = uint8_t;
+constexpr PathRailingsIndex PATH_RAILINGS_INDEX_NULL = static_cast<PathRailingsIndex>(-1);
+
+enum class RailingEntrySupportType : uint8_t
+{
+    Box = 0,
+    Pole = 1,
+    Count
+};
 
 #pragma pack(push, 1)
 struct rct_footpath_entry
 {
-    rct_string_id string_idx; // 0x00
-    uint32_t image;           // 0x02
-    uint32_t bridge_image;    // 0x06
-    uint8_t support_type;     // 0x0A
-    uint8_t flags;            // 0x0B
-    uint8_t scrolling_mode;   // 0x0C
+    rct_string_id string_idx;             // 0x00
+    uint32_t image;                       // 0x02
+    uint32_t bridge_image;                // 0x06
+    RailingEntrySupportType support_type; // 0x0A
+    uint8_t flags;                        // 0x0B
+    uint8_t scrolling_mode;               // 0x0C
 };
 assert_struct_size(rct_footpath_entry, 13);
 #pragma pack(pop)
+
+struct PathSurfaceEntry
+{
+    rct_string_id string_idx;
+    uint32_t image;
+    uint32_t preview;
+    uint8_t flags;
+};
+
+struct PathRailingsEntry
+{
+    rct_string_id string_idx;
+    uint32_t preview;
+    uint32_t bridge_image;
+    uint32_t railings_image;
+    RailingEntrySupportType support_type;
+    uint8_t flags;
+    uint8_t scrolling_mode;
+};
+
+struct ProvisionalFootpath
+{
+    ObjectEntryIndex Type;
+    CoordsXYZ Position;
+    uint8_t Slope;
+    uint8_t Flags;
+};
 
 // Masks for values stored in TileElement.type
 enum
@@ -53,34 +97,32 @@ enum
     FOOTPATH_PROPERTIES_TYPE_MASK = (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7),
 };
 
-// Masks and flags for values stored in in TileElement.properties.path.edges
+// Masks and flags for values stored in TileElement.properties.path.edges
 enum
 {
     FOOTPATH_PROPERTIES_EDGES_EDGES_MASK = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3),
     FOOTPATH_PROPERTIES_EDGES_CORNERS_MASK = (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7),
 };
 
-// Masks and flags for values stored in in TileElement.properties.path.additions
 enum
 {
-    FOOTPATH_PROPERTIES_ADDITIONS_TYPE_MASK = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3),
-    // The most significant bit in this mask will always be zero, since rides can only have 4 stations
-    FOOTPATH_PROPERTIES_ADDITIONS_STATION_INDEX_MASK = (1 << 4) | (1 << 5) | (1 << 6),
-    FOOTPATH_PROPERTIES_ADDITIONS_FLAG_GHOST = (1 << 7),
+    FOOTPATH_ELEMENT_FLAGS2_IS_SLOPED = 1 << 0,
+    FOOTPATH_ELEMENT_FLAGS2_HAS_QUEUE_BANNER = (1 << 1),
+    FOOTPATH_ELEMENT_FLAGS2_ADDITION_IS_GHOST = (1 << 2),
+    FOOTPATH_ELEMENT_FLAGS2_BLOCKED_BY_VEHICLE = (1 << 3),
+    FOOTPATH_ELEMENT_FLAGS2_ADDITION_IS_BROKEN = (1 << 4),
 };
 
 enum
 {
-    FOOTPATH_ENTRY_SUPPORT_TYPE_BOX = 0,
-    FOOTPATH_ENTRY_SUPPORT_TYPE_POLE = 1,
-    FOOTPATH_ENTRY_SUPPORT_TYPE_COUNT
-};
-
-enum
-{
-    FOOTPATH_ENTRY_FLAG_HAS_SUPPORT_BASE_SPRITE = (1 << 0),
-    FOOTPATH_ENTRY_FLAG_HAS_PATH_BASE_SPRITE = (1 << 1), // When elevated
     FOOTPATH_ENTRY_FLAG_SHOW_ONLY_IN_SCENARIO_EDITOR = (1 << 2),
+    FOOTPATH_ENTRY_FLAG_IS_QUEUE = (1 << 3),
+};
+
+enum
+{
+    RAILING_ENTRY_FLAG_HAS_SUPPORT_BASE_SPRITE = (1 << 0),
+    RAILING_ENTRY_FLAG_DRAW_PATH_OVER_SUPPORTS = (1 << 1), // When elevated
 };
 
 enum
@@ -93,74 +135,71 @@ enum
 
 enum
 {
-    FOOTPATH_ADDITION_FLAG_IS_GHOST = (1 << 7),
-};
-
-enum
-{
-    FOOTPATH_CLEAR_DIRECTIONAL = (1 << 8), // Flag set when direction is used.
-};
-
-enum
-{
     SLOPE_IS_IRREGULAR_FLAG = (1 << 3), // Flag set in `DefaultPathSlope[]` and checked in `footpath_place_real`
     RAISE_FOOTPATH_FLAG = (1 << 4)
 };
 
-extern uint8_t gFootpathProvisionalFlags;
-extern LocationXYZ16 gFootpathProvisionalPosition;
-extern uint8_t gFootpathProvisionalType;
-extern uint8_t gFootpathProvisionalSlope;
-extern uint8_t gFootpathConstructionMode;
+enum
+{
+    FOOTPATH_CORNER_0 = (1 << 0),
+    FOOTPATH_CORNER_1 = (1 << 1),
+    FOOTPATH_CORNER_2 = (1 << 2),
+    FOOTPATH_CORNER_3 = (1 << 3),
+};
+
+enum
+{
+    FOOTPATH_CONNECTION_S = (1 << 0),
+    FOOTPATH_CONNECTION_NE = (1 << 1),
+    FOOTPATH_CONNECTION_W = (1 << 2),
+    FOOTPATH_CONNECTION_SE = (1 << 3),
+    FOOTPATH_CONNECTION_N = (1 << 4),
+    FOOTPATH_CONNECTION_SW = (1 << 5),
+    FOOTPATH_CONNECTION_E = (1 << 6),
+    FOOTPATH_CONNECTION_NW = (1 << 7),
+};
+
+enum
+{
+    FOOTPATH_CONNECTED_MAP_EDGE_IGNORE_QUEUES = (1 << 0),
+    FOOTPATH_CONNECTED_MAP_EDGE_UNOWN = (1 << 5),
+    FOOTPATH_CONNECTED_MAP_EDGE_IGNORE_NO_ENTRY = (1 << 7)
+};
+
+extern ProvisionalFootpath gProvisionalFootpath;
 extern uint16_t gFootpathSelectedId;
-extern uint8_t gFootpathSelectedType;
-extern LocationXYZ16 gFootpathConstructFromPosition;
-extern uint8_t gFootpathConstructDirection;
+extern CoordsXYZ gFootpathConstructFromPosition;
 extern uint8_t gFootpathConstructSlope;
-extern uint8_t gFootpathConstructValidDirections;
-extern money32 gFootpathPrice;
 extern uint8_t gFootpathGroundFlags;
 
-extern const LocationXY16 word_981D6C[4];
-extern const LocationXY16 BinUseOffsets[4];
-extern const LocationXY16 BenchUseOffsets[8];
+// Given a direction, this will return how to increase/decrease the x and y coordinates.
+extern const CoordsXY DirectionOffsets[NumOrthogonalDirections];
+extern const CoordsXY BinUseOffsets[NumOrthogonalDirections];
+extern const CoordsXY BenchUseOffsets[NumOrthogonalDirections * 2];
 
-TileElement* map_get_footpath_element(int32_t x, int32_t y, int32_t z);
-void footpath_interrupt_peeps(int32_t x, int32_t y, int32_t z);
-void game_command_place_footpath(
-    int32_t* eax, int32_t* ebx, int32_t* ecx, int32_t* edx, int32_t* esi, int32_t* edi, int32_t* ebp);
-void game_command_place_footpath_from_track(
-    int32_t* eax, int32_t* ebx, int32_t* ecx, int32_t* edx, int32_t* esi, int32_t* edi, int32_t* ebp);
-void game_command_remove_footpath(
-    int32_t* eax, int32_t* ebx, int32_t* ecx, int32_t* edx, int32_t* esi, int32_t* edi, int32_t* ebp);
-money32 footpath_place(int32_t type, int32_t x, int32_t y, int32_t z, int32_t slope, int32_t flags);
-money32 footpath_place_remove_intersecting(
-    int32_t type, int32_t x, int32_t y, int32_t z, int32_t slope, int32_t flags, int32_t direction);
-money32 footpath_remove(int32_t x, int32_t y, int32_t z, int32_t flags);
-money32 footpath_provisional_set(int32_t type, int32_t x, int32_t y, int32_t z, int32_t slope);
+TileElement* map_get_footpath_element(const CoordsXYZ& coords);
+void footpath_interrupt_peeps(const CoordsXYZ& footpathPos);
+money32 footpath_remove(const CoordsXYZ& footpathLoc, int32_t flags);
+money32 footpath_provisional_set(int32_t type, const CoordsXYZ& footpathLoc, int32_t slope);
 void footpath_provisional_remove();
 void footpath_provisional_update();
-void remove_banners_at_element(int32_t x, int32_t y, TileElement* tileElement);
-void footpath_get_coordinates_from_pos(
-    int32_t screenX, int32_t screenY, int32_t* x, int32_t* y, int32_t* direction, TileElement** tileElement);
-void footpath_bridge_get_info_from_pos(
-    int32_t screenX, int32_t screenY, int32_t* x, int32_t* y, int32_t* direction, TileElement** tileElement);
-void footpath_remove_litter(int32_t x, int32_t y, int32_t z);
-void footpath_connect_edges(int32_t x, int32_t y, TileElement* tileElement, int32_t flags);
+CoordsXY footpath_get_coordinates_from_pos(const ScreenCoordsXY& screenCoords, int32_t* direction, TileElement** tileElement);
+CoordsXY footpath_bridge_get_info_from_pos(const ScreenCoordsXY& screenCoords, int32_t* direction, TileElement** tileElement);
+void footpath_remove_litter(const CoordsXYZ& footpathPos);
+void footpath_connect_edges(const CoordsXY& footpathPos, TileElement* tileElement, int32_t flags);
 void footpath_update_queue_chains();
-bool fence_in_the_way(int32_t x, int32_t y, int32_t z0, int32_t z1, int32_t direction);
+bool fence_in_the_way(const CoordsXYRangedZ& fencePos, int32_t direction);
 void footpath_chain_ride_queue(
-    int32_t rideIndex, int32_t entranceIndex, int32_t x, int32_t y, TileElement* tileElement, int32_t direction);
-void footpath_update_path_wide_flags(int32_t x, int32_t y);
+    ride_id_t rideIndex, int32_t entranceIndex, const CoordsXY& footpathPos, TileElement* tileElement, int32_t direction);
+void footpath_update_path_wide_flags(const CoordsXY& footpathPos);
 bool footpath_is_blocked_by_vehicle(const TileCoordsXYZ& position);
 
-int32_t footpath_is_connected_to_map_edge(int32_t x, int32_t y, int32_t z, int32_t direction, int32_t flags);
-void footpath_remove_edges_at(int32_t x, int32_t y, TileElement* tileElement);
+int32_t footpath_is_connected_to_map_edge(const CoordsXYZ& footpathPos, int32_t direction, int32_t flags);
+void footpath_remove_edges_at(const CoordsXY& footpathPos, TileElement* tileElement);
 int32_t entrance_get_directions(const TileElement* tileElement);
 
-rct_footpath_entry* get_footpath_entry(int32_t entryIndex);
+PathSurfaceEntry* get_path_surface_entry(PathSurfaceIndex entryIndex);
+PathRailingsEntry* get_path_railings_entry(PathRailingsIndex entryIndex);
 
 void footpath_queue_chain_reset();
-void footpath_queue_chain_push(uint8_t rideIndex);
-
-#endif
+void footpath_queue_chain_push(ride_id_t rideIndex);

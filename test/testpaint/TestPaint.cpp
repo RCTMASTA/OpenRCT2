@@ -27,8 +27,8 @@ namespace TestPaint
 {
     void ResetEnvironment()
     {
-        gPaintInteractionType = VIEWPORT_INTERACTION_ITEM_RIDE;
-        gPaintSession.InteractionType = VIEWPORT_INTERACTION_ITEM_RIDE;
+        gPaintInteractionType = EnumValue(ViewportInteractionItem::Ride);
+        gPaintSession.InteractionType = ViewportInteractionItem::Ride;
 
         gTrackColours[SCHEME_TRACK] = DEFAULT_SCHEME_TRACK;
         gTrackColours[SCHEME_SUPPORTS] = DEFAULT_SCHEME_SUPPORTS;
@@ -43,28 +43,25 @@ namespace TestPaint
         rct_drawpixelinfo dpi = {};
         dpi.zoom_level = 1;
         RCT2_Unk140E9A8 = &dpi;
-        gPaintSession.DPI = &dpi;
+        gPaintSession.DPI = dpi;
 
         {
-            Ride ride = {};
-            ride.entrance_style = RIDE_ENTRANCE_STYLE_PLAIN;
             static rct_ride_entry rideEntry = {};
             rct_ride_entry_vehicle vehicleEntry{};
             vehicleEntry.base_image_id = 0x70000;
             rideEntry.vehicles[0] = vehicleEntry;
-            gRideList[0] = ride;
+            gRideList[0] = {};
             gRideEntries[0] = &rideEntry;
         }
         {
             rct2_ride ride = {};
-            ride.entrance_style = RIDE_ENTRANCE_STYLE_PLAIN;
+            ride.entrance_style = 0;
             RCT2_Rides[0] = ride;
         }
 
         g141E9DB = G141E9DB_FLAG_1 | G141E9DB_FLAG_2;
         gPaintSession.Unk141E9DB = G141E9DB_FLAG_1 | G141E9DB_FLAG_2;
 
-        gCurrentViewportFlags = 0;
         RCT2_CurrentViewportFlags = 0;
 
         gScenarioTicks = 0;

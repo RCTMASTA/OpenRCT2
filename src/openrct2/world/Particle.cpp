@@ -1,25 +1,36 @@
 /*****************************************************************************
- * Copyright (c) 2014-2018 OpenRCT2 developers
+ * Copyright (c) 2014-2020 OpenRCT2 developers
  *
  * For a complete list of all authors, please refer to contributors.md
  * Interested in contributing? Visit https://github.com/OpenRCT2/OpenRCT2
  *
  * OpenRCT2 is licensed under the GNU General Public License version 3.
  *****************************************************************************/
+#include "Particle.h"
 
 #include "../audio/audio.h"
-#include "../core/Util.hpp"
 #include "../paint/sprite/Paint.Sprite.h"
 #include "../scenario/Scenario.h"
 #include "Sprite.h"
 
+#include <iterator>
+
+template<> bool SpriteBase::Is<VehicleCrashParticle>() const
+{
+    return Type == EntityType::CrashedVehicleParticle;
+}
+
+template<> bool SpriteBase::Is<CrashSplashParticle>() const
+{
+    return Type == EntityType::CrashSplash;
+}
 /**
  *
  *  rct2: 0x006735A1
  */
-void crashed_vehicle_particle_create(rct_vehicle_colour colours, int32_t x, int32_t y, int32_t z)
+void VehicleCrashParticle::Create(rct_vehicle_colour colours, const CoordsXYZ& vehiclePos)
 {
-    rct_crashed_vehicle_particle* sprite = (rct_crashed_vehicle_particle*)create_sprite(2);
+    VehicleCrashParticle* sprite = CreateEntity<VehicleCrashParticle>();
     if (sprite != nullptr)
     {
         sprite->colour[0] = colours.body_colour;
@@ -27,15 +38,13 @@ void crashed_vehicle_particle_create(rct_vehicle_colour colours, int32_t x, int3
         sprite->sprite_width = 8;
         sprite->sprite_height_negative = 8;
         sprite->sprite_height_positive = 8;
-        sprite->sprite_identifier = SPRITE_IDENTIFIER_MISC;
-        sprite_move(x, y, z, (rct_sprite*)sprite);
-        sprite->type = SPRITE_MISC_CRASHED_VEHICLE_PARTICLE;
+        sprite->MoveTo(vehiclePos);
 
         sprite->frame = (scenario_rand() & 0xFF) * 12;
         sprite->time_to_live = (scenario_rand() & 0x7F) + 140;
-        sprite->crashed_sprite_base = scenario_rand_max((uint32_t)Util::CountOf(vehicle_particle_base_sprites));
-        sprite->acceleration_x = ((int16_t)(scenario_rand() & 0xFFFF)) * 4;
-        sprite->acceleration_y = ((int16_t)(scenario_rand() & 0xFFFF)) * 4;
+        sprite->crashed_sprite_base = scenario_rand_max(static_cast<uint32_t>(std::size(vehicle_particle_base_sprites)));
+        sprite->acceleration_x = (static_cast<int16_t>(scenario_rand() & 0xFFFF)) * 4;
+        sprite->acceleration_y = (static_cast<int16_t>(scenario_rand() & 0xFFFF)) * 4;
         sprite->acceleration_z = (scenario_rand() & 0xFFFF) * 4 + 0x10000;
         sprite->velocity_x = 0;
         sprite->velocity_y = 0;
@@ -47,64 +56,60 @@ void crashed_vehicle_particle_create(rct_vehicle_colour colours, int32_t x, int3
  *
  *  rct2: 0x00673298
  */
-void crashed_vehicle_particle_update(rct_crashed_vehicle_particle* particle)
+void VehicleCrashParticle::Update()
 {
-    invalidate_sprite_0((rct_sprite*)particle);
-    particle->time_to_live--;
-    if (particle->time_to_live == 0)
+    Invalidate();
+    time_to_live--;
+    if (time_to_live == 0)
     {
-        sprite_remove((rct_sprite*)particle);
+        sprite_remove(this);
         return;
     }
 
     // Apply gravity
-    particle->acceleration_z -= 5041;
+    acceleration_z -= 5041;
 
     // Apply air resistance
-    particle->acceleration_x -= (particle->acceleration_x / 256);
-    particle->acceleration_y -= (particle->acceleration_y / 256);
-    particle->acceleration_z -= (particle->acceleration_z / 256);
+    acceleration_x -= (acceleration_x / 256);
+    acceleration_y -= (acceleration_y / 256);
+    acceleration_z -= (acceleration_z / 256);
 
     // Update velocity and position
-    int32_t vx = particle->velocity_x + particle->acceleration_x;
-    int32_t vy = particle->velocity_y + particle->acceleration_y;
-    int32_t vz = particle->velocity_z + particle->acceleration_z;
+    int32_t vx = velocity_x + acceleration_x;
+    int32_t vy = velocity_y + acceleration_y;
+    int32_t vz = velocity_z + acceleration_z;
 
-    int16_t x = particle->x + (vx >> 16);
-    int16_t y = particle->y + (vy >> 16);
-    int16_t z = particle->z + (vz >> 16);
+    CoordsXYZ newLoc = { x + (vx >> 16), y + (vy >> 16), z + (vz >> 16) };
 
-    particle->velocity_x = vx & 0xFFFF;
-    particle->velocity_y = vy & 0xFFFF;
-    particle->velocity_z = vz & 0xFFFF;
+    velocity_x = vx & 0xFFFF;
+    velocity_y = vy & 0xFFFF;
+    velocity_z = vz & 0xFFFF;
 
     // Check collision with land / water
-    uint32_t waterLand = tile_element_height(x, y);
-    int16_t landZ = (waterLand & 0xFFFF);
-    int16_t waterZ = (waterLand >> 16);
+    int16_t landZ = tile_element_height(newLoc);
+    int16_t waterZ = tile_element_water_height(newLoc);
 
-    if (waterZ != 0 && particle->z >= waterZ && z <= waterZ)
+    if (waterZ != 0 && z >= waterZ && newLoc.z <= waterZ)
     {
         // Splash
-        audio_play_sound_at_location(SOUND_WATER_2, particle->x, particle->y, waterZ);
-        crash_splash_create(particle->x, particle->y, waterZ);
-        sprite_remove((rct_sprite*)particle);
+        OpenRCT2::Audio::Play3D(OpenRCT2::Audio::SoundId::Water2, { x, y, waterZ });
+        CrashSplashParticle::Create({ x, y, waterZ });
+        sprite_remove(this);
         return;
     }
 
-    if (particle->z >= landZ && z <= landZ)
+    if (z >= landZ && newLoc.z <= landZ)
     {
         // Bounce
-        particle->acceleration_z *= -1;
-        z = landZ;
+        acceleration_z *= -1;
+        newLoc.z = landZ;
     }
-    sprite_move(x, y, z, (rct_sprite*)particle);
-    invalidate_sprite_0((rct_sprite*)particle);
+    MoveTo(newLoc);
 
-    particle->frame += 85;
-    if (particle->frame >= 3072)
+    frame += 85;
+    if (frame >= 3072)
     {
-        particle->frame = 0;
+        frame = 0;
     }
 }
 
@@ -112,17 +117,15 @@ void crashed_vehicle_particle_update(rct_crashed_vehicle_particle* particle)
  *
  *  rct2: 0x00673699
  */
-void crash_splash_create(int32_t x, int32_t y, int32_t z)
+void CrashSplashParticle::Create(const CoordsXYZ& splashPos)
 {
-    rct_sprite_generic* sprite = (rct_sprite_generic*)create_sprite(2);
+    auto* sprite = CreateEntity<CrashSplashParticle>();
     if (sprite != nullptr)
     {
         sprite->sprite_width = 33;
         sprite->sprite_height_negative = 51;
         sprite->sprite_height_positive = 16;
-        sprite->sprite_identifier = SPRITE_IDENTIFIER_MISC;
-        sprite_move(x, y, z + 3, (rct_sprite*)sprite);
-        sprite->type = SPRITE_MISC_CRASH_SPLASH;
+        sprite->MoveTo(splashPos + CoordsXYZ{ 0, 0, 3 });
         sprite->frame = 0;
     }
 }
@@ -131,12 +134,117 @@ void crash_splash_create(int32_t x, int32_t y, int32_t z)
  *
  *  rct2: 0x0067339D
  */
-void crash_splash_update(rct_crash_splash* splash)
+void CrashSplashParticle::Update()
 {
-    invalidate_sprite_2((rct_sprite*)splash);
-    splash->frame += 85;
-    if (splash->frame >= 7168)
+    Invalidate();
+    frame += 85;
+    if (frame >= 7168)
     {
-        sprite_remove((rct_sprite*)splash);
+        sprite_remove(this);
+    }
+}
+
+/**
+ *
+ *  rct2: 0x006734B2
+ */
+void SteamParticle::Create(const CoordsXYZ& coords)
+{
+    auto surfaceElement = map_get_surface_element_at(coords);
+    if (surfaceElement != nullptr && coords.z > surfaceElement->GetBaseZ())
+    {
+        SteamParticle* steam = CreateEntity<SteamParticle>();
+        if (steam == nullptr)
+            return;
+
+        steam->sprite_width = 20;
+        steam->sprite_height_negative = 18;
+        steam->sprite_height_positive = 16;
+        steam->frame = 256;
+        steam->time_to_move = 0;
+        steam->MoveTo(coords);
+    }
+}
+
+/**
+ *
+ *  rct2: 0x00673200
+ */
+void SteamParticle::Update()
+{
+    // Move up 1 z every 3 ticks (Starts after 4 ticks)
+    Invalidate();
+    time_to_move++;
+    if (time_to_move >= 4)
+    {
+        time_to_move = 1;
+        MoveTo({ x, y, z + 1 });
+    }
+    frame += 64;
+    if (frame >= (56 * 64))
+    {
+        sprite_remove(this);
+    }
+}
+
+/**
+ *
+ *  rct2: 0x0067363D
+ */
+void ExplosionCloud::Create(const CoordsXYZ& cloudPos)
+{
+    auto* entity = CreateEntity<ExplosionCloud>();
+    if (entity != nullptr)
+    {
+        entity->sprite_width = 44;
+        entity->sprite_height_negative = 32;
+        entity->sprite_height_positive = 34;
+        entity->MoveTo(cloudPos + CoordsXYZ{ 0, 0, 4 });
+        entity->frame = 0;
+    }
+}
+
+/**
+ *
+ *  rct2: 0x00673385
+ */
+void ExplosionCloud::Update()
+{
+    Invalidate();
+    frame += 128;
+    if (frame >= (36 * 128))
+    {
+        sprite_remove(this);
+    }
+}
+
+/**
+ *
+ *  rct2: 0x0067366B
+ */
+void ExplosionFlare::Create(const CoordsXYZ& flarePos)
+{
+    auto* entity = CreateEntity<ExplosionFlare>();
+    if (entity != nullptr)
+    {
+        entity->sprite_width = 25;
+        entity->sprite_height_negative = 85;
+        entity->sprite_height_positive = 8;
+        entity->MoveTo(flarePos + CoordsXYZ{ 0, 0, 4 });
+        entity->frame = 0;
+    }
+}
+
+/**
+ *
+ *  rct2: 0x006733B4
+ */
+void ExplosionFlare::Update()
+{
+    Invalidate();
+    frame += 64;
+    if (frame >= (124 * 64))
+    {
+        sprite_remove(this);
     }
 }

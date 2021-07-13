@@ -16,6 +16,7 @@ bin.*/
 .dependencies
 sequencesversion
 objectsversion
+/out/
 
 #lib
 lib
@@ -23,7 +24,7 @@ libversion
 
 # Downloaded or built data files
 data/g2.dat
-data/title
+data/sequence
 data/object
 
 #################
@@ -306,5 +307,5 @@ discord-rpc
 !.vscode/launch.json
 !.vscode/extensions.json
 
-# Cmake
-cmake-build-debug/
+# CMake
+cmake-build-*/

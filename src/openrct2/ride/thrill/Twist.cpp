@@ -1,5 +1,5 @@
 /*****************************************************************************
- * Copyright (c) 2014-2018 OpenRCT2 developers
+ * Copyright (c) 2014-2020 OpenRCT2 developers
  *
  * For a complete list of all authors, please refer to contributors.md
  * Interested in contributing? Visit https://github.com/OpenRCT2/OpenRCT2
@@ -11,9 +11,10 @@
 #include "../../interface/Viewport.h"
 #include "../../paint/Paint.h"
 #include "../../paint/Supports.h"
-#include "../../world/Sprite.h"
+#include "../../world/Entity.h"
 #include "../Track.h"
 #include "../TrackPaint.h"
+#include "../Vehicle.h"
 
 /** rct2: 0x0076E5C9 */
 static void paint_twist_structure(
@@ -22,7 +23,7 @@ static void paint_twist_structure(
     const TileElement* savedTileElement = static_cast<const TileElement*>(session->CurrentlyDrawnItem);
 
     rct_ride_entry* rideEntry = get_ride_entry(ride->subtype);
-    rct_vehicle* vehicle = nullptr;
+    Vehicle* vehicle = nullptr;
 
     if (rideEntry == nullptr)
     {
@@ -34,9 +35,9 @@ static void paint_twist_structure(
 
     if (ride->lifecycle_flags & RIDE_LIFECYCLE_ON_TRACK && ride->vehicles[0] != SPRITE_INDEX_NULL)
     {
-        vehicle = GET_VEHICLE(ride->vehicles[0]);
+        vehicle = GetEntity<Vehicle>(ride->vehicles[0]);
 
-        session->InteractionType = VIEWPORT_INTERACTION_ITEM_SPRITE;
+        session->InteractionType = ViewportInteractionItem::Entity;
         session->CurrentlyDrawnItem = vehicle;
     }
 
@@ -44,22 +45,21 @@ static void paint_twist_structure(
     if (vehicle != nullptr)
     {
         frameNum += (vehicle->sprite_direction >> 3) << 4;
-        frameNum += vehicle->vehicle_sprite_type;
+        frameNum += vehicle->Pitch;
         frameNum = frameNum % 216;
     }
 
     uint32_t imageColourFlags = session->TrackColours[SCHEME_MISC];
     if (imageColourFlags == IMAGE_TYPE_REMAP)
     {
-        imageColourFlags = SPRITE_ID_PALETTE_COLOUR_2(
-            ride->vehicle_colours[0].body_colour, ride->vehicle_colours[0].trim_colour);
+        imageColourFlags = SPRITE_ID_PALETTE_COLOUR_2(ride->vehicle_colours[0].Body, ride->vehicle_colours[0].Trim);
     }
 
     uint32_t structureFrameNum = frameNum % 24;
     uint32_t imageId = (baseImageId + structureFrameNum) | imageColourFlags;
-    sub_98197C(session, imageId, xOffset, yOffset, 24, 24, 48, height, xOffset + 16, yOffset + 16, height);
+    PaintAddImageAsParent(session, imageId, xOffset, yOffset, 24, 24, 48, height, xOffset + 16, yOffset + 16, height);
 
-    rct_drawpixelinfo* dpi = session->DPI;
+    rct_drawpixelinfo* dpi = &session->DPI;
 
     if (dpi->zoom_level < 1 && ride->lifecycle_flags & RIDE_LIFECYCLE_ON_TRACK && vehicle != nullptr)
     {
@@ -69,24 +69,26 @@ static void paint_twist_structure(
 
             uint32_t peepFrameNum = (frameNum + i * 12) % 216;
             imageId = (baseImageId + 24 + peepFrameNum) | imageColourFlags;
-            sub_98199C(session, imageId, xOffset, yOffset, 24, 24, 48, height, xOffset + 16, yOffset + 16, height);
+            PaintAddImageAsChild(session, imageId, xOffset, yOffset, 24, 24, 48, height, xOffset + 16, yOffset + 16, height);
         }
     }
 
     session->CurrentlyDrawnItem = savedTileElement;
-    session->InteractionType = VIEWPORT_INTERACTION_ITEM_RIDE;
+    session->InteractionType = ViewportInteractionItem::Ride;
 }
 
 /** rct2: 0x0076D858 */
 static void paint_twist(
-    paint_session* session, uint8_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
+    paint_session* session, ride_id_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
     const TileElement* tileElement)
 {
+    auto ride = get_ride(rideIndex);
+    if (ride == nullptr)
+        return;
+
     trackSequence = track_map_3x3[direction][trackSequence];
 
     const uint8_t edges = edges_3x3[trackSequence];
-    Ride* ride = get_ride(rideIndex);
-    LocationXY16 position = session->MapPosition;
 
     uint32_t imageId;
 
@@ -97,21 +99,21 @@ static void paint_twist(
     switch (trackSequence)
     {
         case 7:
-            if (track_paint_util_has_fence(EDGE_SW, position, tileElement, ride, session->CurrentRotation))
+            if (track_paint_util_has_fence(EDGE_SW, session->MapPosition, tileElement, ride, session->CurrentRotation))
             {
                 imageId = SPR_FENCE_ROPE_SW | session->TrackColours[SCHEME_MISC];
-                sub_98197C(session, imageId, 0, 0, 1, 28, 7, height, 29, 0, height + 3);
+                PaintAddImageAsParent(session, imageId, 0, 0, 1, 28, 7, height, 29, 0, height + 3);
             }
-            if (track_paint_util_has_fence(EDGE_SE, position, tileElement, ride, session->CurrentRotation))
+            if (track_paint_util_has_fence(EDGE_SE, session->MapPosition, tileElement, ride, session->CurrentRotation))
             {
                 imageId = SPR_FENCE_ROPE_SE | session->TrackColours[SCHEME_MISC];
-                sub_98197C(session, imageId, 0, 0, 28, 1, 7, height, 0, 29, height + 3);
+                PaintAddImageAsParent(session, imageId, 0, 0, 28, 1, 7, height, 0, 29, height + 3);
             }
             break;
         default:
             track_paint_util_paint_fences(
-                session, edges, position, tileElement, ride, session->TrackColours[SCHEME_MISC], height, fenceSpritesRope,
-                session->CurrentRotation);
+                session, edges, session->MapPosition, tileElement, ride, session->TrackColours[SCHEME_MISC], height,
+                fenceSpritesRope, session->CurrentRotation);
             break;
     }
 
@@ -162,9 +164,9 @@ static void paint_twist(
 /**
  * rct2: 0x0076D658
  */
-TRACK_PAINT_FUNCTION get_track_paint_function_twist(int32_t trackType, int32_t direction)
+TRACK_PAINT_FUNCTION get_track_paint_function_twist(int32_t trackType)
 {
-    if (trackType != FLAT_TRACK_ELEM_3_X_3)
+    if (trackType != TrackElemType::FlatTrack3x3)
     {
         return nullptr;
     }

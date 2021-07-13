@@ -1,5 +1,5 @@
 /*****************************************************************************
- * Copyright (c) 2014-2018 OpenRCT2 developers
+ * Copyright (c) 2014-2020 OpenRCT2 developers
  *
  * For a complete list of all authors, please refer to contributors.md
  * Interested in contributing? Visit https://github.com/OpenRCT2/OpenRCT2
@@ -7,18 +7,20 @@
  * OpenRCT2 is licensed under the GNU General Public License version 3.
  *****************************************************************************/
 
-#include "../interface/Theme.h"
+#ifndef DISABLE_NETWORK
 
-#include <openrct2-ui/interface/Widget.h>
-#include <openrct2-ui/windows/Window.h>
-#include <openrct2/Context.h>
-#include <openrct2/ParkImporter.h>
-#include <openrct2/config/Config.h>
-#include <openrct2/interface/Chat.h>
-#include <openrct2/localisation/Localisation.h>
-#include <openrct2/network/network.h>
-#include <openrct2/util/Util.h>
-#include <openrct2/windows/Intent.h>
+#    include "../interface/Theme.h"
+
+#    include <openrct2-ui/interface/Widget.h>
+#    include <openrct2-ui/windows/Window.h>
+#    include <openrct2/Context.h>
+#    include <openrct2/ParkImporter.h>
+#    include <openrct2/config/Config.h>
+#    include <openrct2/interface/Chat.h>
+#    include <openrct2/localisation/Localisation.h>
+#    include <openrct2/network/network.h>
+#    include <openrct2/util/Util.h>
+#    include <openrct2/windows/Intent.h>
 
 static char _port[7];
 static char _name[65];
@@ -44,22 +46,22 @@ enum {
     WIDX_LOAD_SERVER
 };
 
-#define WW 300
-#define WH 154
+static constexpr const int32_t WW = 300;
+static constexpr const int32_t WH = 154;
 
 static rct_widget window_server_start_widgets[] = {
-    { WWT_FRAME,            0,  0,      WW-1,   0,          WH-1,   STR_NONE,                       STR_NONE },                 // panel / background
-    { WWT_CAPTION,          0,  1,      WW-2,   1,          14,     STR_START_SERVER,               STR_WINDOW_TITLE_TIP },     // title bar
-    { WWT_CLOSEBOX,         0,  WW-13,  WW-3,   2,          13,     STR_CLOSE_X,                    STR_CLOSE_WINDOW_TIP },     // close x button
-    { WWT_TEXT_BOX,         1,  120,    WW-8,   20,         32,     STR_NONE,                       STR_NONE },                 // port text box
-    { WWT_TEXT_BOX,         1,  120,    WW-8,   36,         48,     STR_NONE,                       STR_NONE },                 // name text box
-    { WWT_TEXT_BOX,         1,  120,    WW-8,   52,         64,     STR_NONE,                       STR_NONE },                 // description text box
-    { WWT_TEXT_BOX,         1,  120,    WW-8,   68,         80,     STR_NONE,                       STR_NONE },                 // greeting text box
-    { WWT_TEXT_BOX,         1,  120,    WW-8,   84,         96,     STR_NONE,                       STR_NONE },                 // password text box
-      SPINNER_WIDGETS      (1,  120,    WW-8,   100,        111,    STR_SERVER_MAX_PLAYERS_VALUE,   STR_NONE),                  // max players (3 widgets)
-    { WWT_CHECKBOX,         1,  6,      WW-8,   117,        130,    STR_ADVERTISE,                  STR_ADVERTISE_SERVER_TIP }, // advertise checkbox
-    { WWT_BUTTON,           1,  6,      106,    WH-6-13,    WH-6,   STR_NEW_GAME,                   STR_NONE },                 // start server button
-    { WWT_BUTTON,           1,  112,    212,    WH-6-13,    WH-6,   STR_LOAD_GAME,                  STR_NONE },
+    MakeWidget        ({    0,       0}, { WW, WH}, WindowWidgetType::Frame,    WindowColour::Primary                                                          ), // panel / background
+    MakeWidget        ({    1,       1}, {298, 14}, WindowWidgetType::Caption,  WindowColour::Primary  , STR_START_SERVER,             STR_WINDOW_TITLE_TIP    ), // title bar
+    MakeWidget        ({WW-13,       2}, { 11, 12}, WindowWidgetType::CloseBox, WindowColour::Primary  , STR_CLOSE_X,                  STR_CLOSE_WINDOW_TIP    ), // close x button
+    MakeWidget        ({  120,      20}, {173, 13}, WindowWidgetType::TextBox, WindowColour::Secondary                                                        ), // port text box
+    MakeWidget        ({  120,      36}, {173, 13}, WindowWidgetType::TextBox, WindowColour::Secondary                                                        ), // name text box
+    MakeWidget        ({  120,      52}, {173, 13}, WindowWidgetType::TextBox, WindowColour::Secondary                                                        ), // description text box
+    MakeWidget        ({  120,      68}, {173, 13}, WindowWidgetType::TextBox, WindowColour::Secondary                                                        ), // greeting text box
+    MakeWidget        ({  120,      84}, {173, 13}, WindowWidgetType::TextBox, WindowColour::Secondary                                                        ), // password text box
+    MakeSpinnerWidgets({  120,     100}, {173, 12}, WindowWidgetType::Spinner,  WindowColour::Secondary, STR_SERVER_MAX_PLAYERS_VALUE                          ), // max players (3 widgets)
+    MakeWidget        ({    6,     117}, {287, 14}, WindowWidgetType::Checkbox, WindowColour::Secondary, STR_ADVERTISE,                STR_ADVERTISE_SERVER_TIP), // advertise checkbox
+    MakeWidget        ({    6, WH-6-13}, {101, 14}, WindowWidgetType::Button,   WindowColour::Secondary, STR_NEW_GAME                                          ), // start server button
+    MakeWidget        ({  112, WH-6-13}, {101, 14}, WindowWidgetType::Button,   WindowColour::Secondary, STR_LOAD_GAME                                         ), // None
     { WIDGETS_END },
 };
 
@@ -70,36 +72,15 @@ static void window_server_start_textinput(rct_window *w, rct_widgetindex widgetI
 static void window_server_start_invalidate(rct_window *w);
 static void window_server_start_paint(rct_window *w, rct_drawpixelinfo *dpi);
 
-static rct_window_event_list window_server_start_events = {
-    window_server_start_close,
-    window_server_start_mouseup,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    window_server_start_update,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    window_server_start_textinput,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    window_server_start_invalidate,
-    window_server_start_paint,
-    nullptr
-};
+static rct_window_event_list window_server_start_events([](auto& events)
+{
+    events.close = &window_server_start_close;
+    events.mouse_up = &window_server_start_mouseup;
+    events.update = &window_server_start_update;
+    events.text_input = &window_server_start_textinput;
+    events.invalidate = &window_server_start_invalidate;
+    events.paint = &window_server_start_paint;
+});
 // clang-format on
 
 rct_window* window_server_start_open()
@@ -111,7 +92,7 @@ rct_window* window_server_start_open()
     if (window != nullptr)
         return window;
 
-    window = window_create_centred(WW, WH, &window_server_start_events, WC_SERVER_START, WF_10);
+    window = WindowCreateCentred(WW, WH, &window_server_start_events, WC_SERVER_START, WF_10);
 
     window_server_start_widgets[WIDX_PORT_INPUT].string = _port;
     window_server_start_widgets[WIDX_NAME_INPUT].string = _name;
@@ -120,11 +101,11 @@ rct_window* window_server_start_open()
     window_server_start_widgets[WIDX_PASSWORD_INPUT].string = _password;
     window->widgets = window_server_start_widgets;
     window->enabled_widgets
-        = ((1 << WIDX_CLOSE) | (1 << WIDX_PORT_INPUT) | (1 << WIDX_NAME_INPUT) | (1 << WIDX_DESCRIPTION_INPUT)
-           | (1 << WIDX_GREETING_INPUT) | (1 << WIDX_PASSWORD_INPUT) | (1 << WIDX_MAXPLAYERS) | (1 << WIDX_MAXPLAYERS_INCREASE)
-           | (1 << WIDX_MAXPLAYERS_DECREASE) | (1 << WIDX_ADVERTISE_CHECKBOX) | (1 << WIDX_START_SERVER)
-           | (1 << WIDX_LOAD_SERVER));
-    window_init_scroll_widgets(window);
+        = ((1ULL << WIDX_CLOSE) | (1ULL << WIDX_PORT_INPUT) | (1ULL << WIDX_NAME_INPUT) | (1ULL << WIDX_DESCRIPTION_INPUT)
+           | (1ULL << WIDX_GREETING_INPUT) | (1ULL << WIDX_PASSWORD_INPUT) | (1ULL << WIDX_MAXPLAYERS)
+           | (1ULL << WIDX_MAXPLAYERS_INCREASE) | (1ULL << WIDX_MAXPLAYERS_DECREASE) | (1ULL << WIDX_ADVERTISE_CHECKBOX)
+           | (1ULL << WIDX_START_SERVER) | (1ULL << WIDX_LOAD_SERVER));
+    WindowInitScrollWidgets(window);
     window->no_list_items = 0;
     window->selected_list_item = -1;
     window->frame_no = 0;
@@ -137,9 +118,9 @@ rct_window* window_server_start_open()
     window->list_information_type = 0;
 
     snprintf(_port, 7, "%u", gConfigNetwork.default_port);
-    safe_strcpy(_name, gConfigNetwork.server_name, sizeof(_name));
-    safe_strcpy(_description, gConfigNetwork.server_description, sizeof(_description));
-    safe_strcpy(_greeting, gConfigNetwork.server_greeting, sizeof(_greeting));
+    safe_strcpy(_name, gConfigNetwork.server_name.c_str(), sizeof(_name));
+    safe_strcpy(_description, gConfigNetwork.server_description.c_str(), sizeof(_description));
+    safe_strcpy(_greeting, gConfigNetwork.server_greeting.c_str(), sizeof(_greeting));
 
     return window;
 }
@@ -153,7 +134,7 @@ static void window_server_start_scenarioselect_callback(const utf8* path)
     network_set_password(_password);
     if (context_load_park_from_file(path))
     {
-        network_begin_server(gConfigNetwork.default_port, gConfigNetwork.listen_address);
+        network_begin_server(gConfigNetwork.default_port, gConfigNetwork.listen_address.c_str());
     }
 }
 
@@ -161,7 +142,7 @@ static void window_server_start_loadsave_callback(int32_t result, const utf8* pa
 {
     if (result == MODAL_RESULT_OK && context_load_park_from_file(path))
     {
-        network_begin_server(gConfigNetwork.default_port, gConfigNetwork.listen_address);
+        network_begin_server(gConfigNetwork.default_port, gConfigNetwork.listen_address.c_str());
     }
 }
 
@@ -193,7 +174,7 @@ static void window_server_start_mouseup(rct_window* w, rct_widgetindex widgetInd
                 gConfigNetwork.maxplayers++;
             }
             config_save_default();
-            window_invalidate(w);
+            w->Invalidate();
             break;
         case WIDX_MAXPLAYERS_DECREASE:
             if (gConfigNetwork.maxplayers > 1)
@@ -201,12 +182,12 @@ static void window_server_start_mouseup(rct_window* w, rct_widgetindex widgetInd
                 gConfigNetwork.maxplayers--;
             }
             config_save_default();
-            window_invalidate(w);
+            w->Invalidate();
             break;
         case WIDX_ADVERTISE_CHECKBOX:
             gConfigNetwork.advertise = !gConfigNetwork.advertise;
             config_save_default();
-            window_invalidate(w);
+            w->Invalidate();
             break;
         case WIDX_START_SERVER:
             window_scenarioselect_open(window_server_start_scenarioselect_callback, false);
@@ -215,7 +196,7 @@ static void window_server_start_mouseup(rct_window* w, rct_widgetindex widgetInd
             network_set_password(_password);
             auto intent = Intent(WC_LOADSAVE);
             intent.putExtra(INTENT_EXTRA_LOADSAVE_TYPE, LOADSAVETYPE_LOAD | LOADSAVETYPE_GAME);
-            intent.putExtra(INTENT_EXTRA_CALLBACK, (void*)window_server_start_loadsave_callback);
+            intent.putExtra(INTENT_EXTRA_CALLBACK, reinterpret_cast<void*>(window_server_start_loadsave_callback));
             context_open_intent(&intent);
             break;
     }
@@ -244,7 +225,7 @@ static void window_server_start_textinput(rct_window* w, rct_widgetindex widgetI
             if (strcmp(_port, text) == 0)
                 return;
 
-            memset(_port, 0, sizeof(_port));
+            std::fill_n(_port, sizeof(_port), 0x00);
             if (strlen(text) > 0)
             {
                 safe_strcpy(_port, text, sizeof(_port));
@@ -259,7 +240,7 @@ static void window_server_start_textinput(rct_window* w, rct_widgetindex widgetI
             if (strcmp(_name, text) == 0)
                 return;
 
-            memset(_name, 0, sizeof(_name));
+            std::fill_n(_name, sizeof(_name), 0x00);
             if (strlen(text) > 0)
             {
                 safe_strcpy(_name, text, sizeof(_name));
@@ -267,8 +248,7 @@ static void window_server_start_textinput(rct_window* w, rct_widgetindex widgetI
 
             if (strlen(_name) > 0)
             {
-                SafeFree(gConfigNetwork.server_name);
-                gConfigNetwork.server_name = _strdup(_name);
+                gConfigNetwork.server_name = _name;
                 config_save_default();
             }
 
@@ -278,7 +258,7 @@ static void window_server_start_textinput(rct_window* w, rct_widgetindex widgetI
             if (strcmp(_description, text) == 0)
                 return;
 
-            memset(_description, 0, sizeof(_description));
+            std::fill_n(_description, sizeof(_description), 0x00);
             if (strlen(text) > 0)
             {
                 safe_strcpy(_description, text, sizeof(_description));
@@ -286,8 +266,7 @@ static void window_server_start_textinput(rct_window* w, rct_widgetindex widgetI
 
             if (strlen(_description) > 0)
             {
-                SafeFree(gConfigNetwork.server_description);
-                gConfigNetwork.server_description = _strdup(_description);
+                gConfigNetwork.server_description = _description;
                 config_save_default();
             }
 
@@ -297,7 +276,7 @@ static void window_server_start_textinput(rct_window* w, rct_widgetindex widgetI
             if (strcmp(_greeting, text) == 0)
                 return;
 
-            memset(_greeting, 0, sizeof(_greeting));
+            std::fill_n(_greeting, sizeof(_greeting), 0x00);
             if (strlen(text) > 0)
             {
                 safe_strcpy(_greeting, text, sizeof(_greeting));
@@ -305,8 +284,7 @@ static void window_server_start_textinput(rct_window* w, rct_widgetindex widgetI
 
             if (strlen(_greeting) > 0)
             {
-                SafeFree(gConfigNetwork.server_greeting);
-                gConfigNetwork.server_greeting = _strdup(_greeting);
+                gConfigNetwork.server_greeting = _greeting;
                 config_save_default();
             }
 
@@ -316,7 +294,7 @@ static void window_server_start_textinput(rct_window* w, rct_widgetindex widgetI
             if (strcmp(_password, text) == 0)
                 return;
 
-            memset(_password, 0, sizeof(_password));
+            std::fill_n(_password, sizeof(_password), 0x00);
             if (strlen(text) > 0)
             {
                 safe_strcpy(_password, text, sizeof(_password));
@@ -329,22 +307,31 @@ static void window_server_start_textinput(rct_window* w, rct_widgetindex widgetI
 
 static void window_server_start_invalidate(rct_window* w)
 {
-    colour_scheme_update_by_class(w, WC_SERVER_LIST);
+    ColourSchemeUpdateByClass(w, WC_SERVER_LIST);
 
-    widget_set_checkbox_value(w, WIDX_ADVERTISE_CHECKBOX, gConfigNetwork.advertise);
-    set_format_arg(18, uint16_t, gConfigNetwork.maxplayers);
+    WidgetSetCheckboxValue(w, WIDX_ADVERTISE_CHECKBOX, gConfigNetwork.advertise);
+    auto ft = Formatter::Common();
+    ft.Increment(18);
+    ft.Add<uint16_t>(gConfigNetwork.maxplayers);
 }
 
 static void window_server_start_paint(rct_window* w, rct_drawpixelinfo* dpi)
 {
-    window_draw_widgets(w, dpi);
+    WindowDrawWidgets(w, dpi);
 
-    gfx_draw_string_left(dpi, STR_PORT, nullptr, w->colours[1], w->x + 6, w->y + w->widgets[WIDX_PORT_INPUT].top);
-    gfx_draw_string_left(dpi, STR_SERVER_NAME, nullptr, w->colours[1], w->x + 6, w->y + w->widgets[WIDX_NAME_INPUT].top);
-    gfx_draw_string_left(
-        dpi, STR_SERVER_DESCRIPTION, nullptr, w->colours[1], w->x + 6, w->y + w->widgets[WIDX_DESCRIPTION_INPUT].top);
-    gfx_draw_string_left(
-        dpi, STR_SERVER_GREETING, nullptr, w->colours[1], w->x + 6, w->y + w->widgets[WIDX_GREETING_INPUT].top);
-    gfx_draw_string_left(dpi, STR_PASSWORD, nullptr, w->colours[1], w->x + 6, w->y + w->widgets[WIDX_PASSWORD_INPUT].top);
-    gfx_draw_string_left(dpi, STR_MAX_PLAYERS, nullptr, w->colours[1], w->x + 6, w->y + w->widgets[WIDX_MAXPLAYERS].top);
+    DrawTextBasic(dpi, w->windowPos + ScreenCoordsXY{ 6, w->widgets[WIDX_PORT_INPUT].top }, STR_PORT, {}, { w->colours[1] });
+    DrawTextBasic(
+        dpi, w->windowPos + ScreenCoordsXY{ 6, w->widgets[WIDX_NAME_INPUT].top }, STR_SERVER_NAME, {}, { w->colours[1] });
+    DrawTextBasic(
+        dpi, w->windowPos + ScreenCoordsXY{ 6, w->widgets[WIDX_DESCRIPTION_INPUT].top }, STR_SERVER_DESCRIPTION, {},
+        { w->colours[1] });
+    DrawTextBasic(
+        dpi, w->windowPos + ScreenCoordsXY{ 6, w->widgets[WIDX_GREETING_INPUT].top }, STR_SERVER_GREETING, {},
+        { w->colours[1] });
+    DrawTextBasic(
+        dpi, w->windowPos + ScreenCoordsXY{ 6, w->widgets[WIDX_PASSWORD_INPUT].top }, STR_PASSWORD, {}, { w->colours[1] });
+    DrawTextBasic(
+        dpi, w->windowPos + ScreenCoordsXY{ 6, w->widgets[WIDX_MAXPLAYERS].top }, STR_MAX_PLAYERS, {}, { w->colours[1] });
 }
+
+#endif

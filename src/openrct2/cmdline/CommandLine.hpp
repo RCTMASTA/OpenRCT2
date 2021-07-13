@@ -1,5 +1,5 @@
 /*****************************************************************************
- * Copyright (c) 2014-2018 OpenRCT2 developers
+ * Copyright (c) 2014-2020 OpenRCT2 developers
  *
  * For a complete list of all authors, please refer to contributors.md
  * Interested in contributing? Visit https://github.com/OpenRCT2/OpenRCT2
@@ -117,6 +117,9 @@ namespace CommandLine
     extern const CommandLineCommand ScreenshotCommands[];
     extern const CommandLineCommand SpriteCommands[];
     extern const CommandLineCommand BenchGfxCommands[];
+    extern const CommandLineCommand BenchSpriteSortCommands[];
+    extern const CommandLineCommand BenchUpdateCommands[];
+    extern const CommandLineCommand SimulateCommands[];
 
     extern const CommandLineExample RootExamples[];
 

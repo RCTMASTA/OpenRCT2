@@ -1,5 +1,5 @@
 /*****************************************************************************
- * Copyright (c) 2014-2018 OpenRCT2 developers
+ * Copyright (c) 2014-2020 OpenRCT2 developers
  *
  * For a complete list of all authors, please refer to contributors.md
  * Interested in contributing? Visit https://github.com/OpenRCT2/OpenRCT2
@@ -46,7 +46,7 @@ enum
 };
 
 static void spiral_slide_paint_tile_right(
-    paint_session* session, uint8_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
+    paint_session* session, ride_id_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
     const TileElement* tileElement)
 {
     uint32_t image_id = 0;
@@ -60,11 +60,11 @@ static void spiral_slide_paint_tile_right(
     if (direction == 3)
         image_id = SPIRAL_SLIDE_RIGHT_R3 | session->TrackColours[SCHEME_TRACK];
 
-    sub_98197C(session, image_id, 16, 16, 16, 16, 108, height, 16, 0, height + 3);
+    PaintAddImageAsParent(session, image_id, 16, 16, 16, 16, 108, height, 16, 0, height + 3);
 }
 
 static void spiral_slide_paint_tile_left(
-    paint_session* session, uint8_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
+    paint_session* session, ride_id_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
     const TileElement* tileElement)
 {
     uint32_t image_id = 0;
@@ -78,51 +78,53 @@ static void spiral_slide_paint_tile_left(
     if (direction == 3)
         image_id = SPIRAL_SLIDE_LEFT_R3 | session->TrackColours[SCHEME_TRACK];
 
-    sub_98197C(session, image_id, 16, 16, 16, 16, 108, height, 0, 16, height + 3);
+    PaintAddImageAsParent(session, image_id, 16, 16, 16, 16, 108, height, 0, 16, height + 3);
 }
 
 static void spiral_slide_paint_tile_front(
-    paint_session* session, uint8_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
+    paint_session* session, ride_id_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
     const TileElement* tileElement)
 {
     uint32_t image_id = 0;
 
-    Ride* ride = get_ride(rideIndex);
+    auto ride = get_ride(rideIndex);
+    if (ride == nullptr)
+        return;
 
     if (direction == 1)
     {
         image_id = SPIRAL_SLIDE_INSIDE_R1 | session->TrackColours[SCHEME_TRACK];
-        sub_98197C(session, image_id, 16, 16, 2, 16, 108, height, -12, 0, height + 3);
+        PaintAddImageAsParent(session, image_id, 16, 16, 2, 16, 108, height, -12, 0, height + 3);
     }
     else if (direction == 2)
     {
         image_id = SPIRAL_SLIDE_INSIDE_R2 | session->TrackColours[SCHEME_TRACK];
-        sub_98197C(session, image_id, 16, 16, 16, 2, 108, height, 0, -12, height + 3);
+        PaintAddImageAsParent(session, image_id, 16, 16, 16, 2, 108, height, 0, -12, height + 3);
     }
 
     if (direction == 0)
     {
         image_id = SPIRAL_SLIDE_CENTRE_R0 | session->TrackColours[SCHEME_TRACK];
-        sub_98197C(session, image_id, 16, 16, 16, 8, 108, height, 0, 8, height + 3);
+        PaintAddImageAsParent(session, image_id, 16, 16, 16, 8, 108, height, 0, 8, height + 3);
     }
     else if (direction == 1)
     {
         image_id = SPIRAL_SLIDE_CENTRE_R1 | session->TrackColours[SCHEME_TRACK];
-        sub_98197C(session, image_id, 16, 16, 2, 16, 108, height, 14, 0, height + 3);
+        PaintAddImageAsParent(session, image_id, 16, 16, 2, 16, 108, height, 14, 0, height + 3);
     }
     else if (direction == 2)
     {
         image_id = SPIRAL_SLIDE_CENTRE_R2 | session->TrackColours[SCHEME_TRACK];
-        sub_98197C(session, image_id, 16, 16, 16, 2, 108, height, 0, 14, height + 3);
+        PaintAddImageAsParent(session, image_id, 16, 16, 16, 2, 108, height, 0, 14, height + 3);
     }
     else if (direction == 3)
     {
         image_id = SPIRAL_SLIDE_CENTRE_R3 | session->TrackColours[SCHEME_TRACK];
-        sub_98197C(session, image_id, 16, 16, 8, 16, 108, height, 8, 0, height + 3);
+        PaintAddImageAsParent(session, image_id, 16, 16, 8, 16, 108, height, 8, 0, height + 3);
     }
 
-    rct_drawpixelinfo* dpi = session->DPI;
-    if (dpi->zoom_level == 0 && ride->slide_in_use != 0)
+    rct_drawpixelinfo* dpi = &session->DPI;
+    if (dpi->zoom_level <= 0 && ride->slide_in_use != 0)
     {
         uint8_t slide_progress = ride->spiral_slide_progress;
         if (slide_progress != 0)
@@ -172,7 +174,7 @@ static void spiral_slide_paint_tile_front(
 
             image_id = (offset + slide_progress) | (ride->slide_peep_t_shirt_colour << 19) | (1 << 29);
 
-            sub_98199C(
+            PaintAddImageAsChild(
                 session, image_id, 16, 16, boundingBox.x, boundingBox.y, boundingBox.z, height, boundingBoxOffset.x,
                 boundingBoxOffset.y, boundingBoxOffset.z);
         }
@@ -190,24 +192,26 @@ static constexpr const uint32_t spiral_slide_fence_sprites[] = {
  * rct: 0x007485C8
  */
 static void paint_spiral_slide(
-    paint_session* session, uint8_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
+    paint_session* session, ride_id_t rideIndex, uint8_t trackSequence, uint8_t direction, int32_t height,
     const TileElement* tileElement)
 {
     trackSequence = track_map_2x2[direction][trackSequence];
 
     int32_t edges = edges_2x2[trackSequence];
-    Ride* ride = get_ride(rideIndex);
-    LocationXY16 position = session->MapPosition;
 
     wooden_a_supports_paint_setup(session, direction & 1, 0, height, session->TrackColours[SCHEME_MISC], nullptr);
 
     // Base
     uint32_t imageId = ((direction & 1) ? SPIRAL_SLIDE_BASE_B : SPIRAL_SLIDE_BASE_A) | session->TrackColours[SCHEME_SUPPORTS];
-    sub_98197C(session, imageId, 0, 0, 32, 32, 1, height, 0, 0, height);
+    PaintAddImageAsParent(session, imageId, 0, 0, 32, 32, 1, height, 0, 0, height);
 
-    track_paint_util_paint_fences(
-        session, edges, position, tileElement, ride, session->TrackColours[SCHEME_TRACK], height, spiral_slide_fence_sprites,
-        session->CurrentRotation);
+    auto ride = get_ride(rideIndex);
+    if (ride != nullptr)
+    {
+        track_paint_util_paint_fences(
+            session, edges, session->MapPosition, tileElement, ride, session->TrackColours[SCHEME_TRACK], height,
+            spiral_slide_fence_sprites, session->CurrentRotation);
+    }
 
     switch (trackSequence)
     {
@@ -229,9 +233,9 @@ static void paint_spiral_slide(
 /**
  * rct2: 0x0074840C
  */
-TRACK_PAINT_FUNCTION get_track_paint_function_spiral_slide(int32_t trackType, int32_t direction)
+TRACK_PAINT_FUNCTION get_track_paint_function_spiral_slide(int32_t trackType)
 {
-    if (trackType != FLAT_TRACK_ELEM_2_X_2)
+    if (trackType != TrackElemType::FlatTrack2x2)
     {
         return nullptr;
     }

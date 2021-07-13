@@ -1,5 +1,5 @@
 /*****************************************************************************
- * Copyright (c) 2014-2018 OpenRCT2 developers
+ * Copyright (c) 2014-2020 OpenRCT2 developers
  *
  * For a complete list of all authors, please refer to contributors.md
  * Interested in contributing? Visit https://github.com/OpenRCT2/OpenRCT2
@@ -17,16 +17,20 @@
 #include <openrct2/EditorObjectSelectionSession.h>
 #include <openrct2/Game.h>
 #include <openrct2/OpenRCT2.h>
+#include <openrct2/actions/LoadOrQuitAction.h>
 #include <openrct2/audio/audio.h>
 #include <openrct2/config/Config.h>
 #include <openrct2/core/String.hpp>
+#include <openrct2/drawing/Drawing.h>
 #include <openrct2/localisation/Localisation.h>
+#include <openrct2/object/MusicObject.h>
 #include <openrct2/object/ObjectList.h>
 #include <openrct2/object/ObjectManager.h>
 #include <openrct2/object/ObjectRepository.h>
 #include <openrct2/object/RideObject.h>
+#include <openrct2/object/SceneryGroupObject.h>
 #include <openrct2/platform/platform.h>
-#include <openrct2/ride/RideGroupManager.h>
+#include <openrct2/ride/RideData.h>
 #include <openrct2/scenario/Scenario.h>
 #include <openrct2/sprites.h>
 #include <openrct2/util/Util.h>
@@ -63,7 +67,7 @@ enum
 static constexpr uint8_t _numSourceGameItems = 8;
 
 static uint32_t _filter_flags;
-static uint16_t _filter_object_counts[OBJECT_TYPE_COUNT];
+static uint16_t _filter_object_counts[EnumValue(ObjectType::Count)];
 
 static char _filter_string[MAX_PATH];
 
@@ -79,6 +83,10 @@ static char _filter_string[MAX_PATH];
 #define _FILTER_SELECTED (_filter_flags & FILTER_SELECTED)
 #define _FILTER_NONSELECTED (_filter_flags & FILTER_NONSELECTED)
 
+static constexpr const rct_string_id WINDOW_TITLE = STR_OBJECT_SELECTION;
+static constexpr const int32_t WH = 400;
+static constexpr const int32_t WW = 600;
+
 struct ObjectPageDesc
 {
     rct_string_id Caption;
@@ -86,7 +94,7 @@ struct ObjectPageDesc
     bool IsAdvanced;
 };
 
-static constexpr const ObjectPageDesc ObjectSelectionPages[OBJECT_TYPE_COUNT] = {
+static constexpr const ObjectPageDesc ObjectSelectionPages[] = {
     { STR_OBJECT_SELECTION_RIDE_VEHICLES_ATTRACTIONS,   SPR_TAB_RIDE_16,            false },
     { STR_OBJECT_SELECTION_SMALL_SCENERY,               SPR_TAB_SCENERY_TREES,      true  },
     { STR_OBJECT_SELECTION_LARGE_SCENERY,               SPR_TAB_SCENERY_URBAN,      true  },
@@ -97,12 +105,17 @@ static constexpr const ObjectPageDesc ObjectSelectionPages[OBJECT_TYPE_COUNT] = 
     { STR_OBJECT_SELECTION_SCENERY_GROUPS,              SPR_TAB_SCENERY_STATUES,    false },
     { STR_OBJECT_SELECTION_PARK_ENTRANCE,               SPR_TAB_PARK,               false },
     { STR_OBJECT_SELECTION_WATER,                       SPR_TAB_WATER,              false },
-    { STR_OBJECT_SELECTION_SCENARIO_DESCRIPTION,        SPR_TAB_STATS,              false },
+
+    // Currently hidden until new save format arrives:
+    // { STR_OBJECT_SELECTION_TERRAIN_SURFACES,            SPR_G2_TAB_LAND,            false },
+    // { STR_OBJECT_SELECTION_TERRAIN_EDGES,               SPR_G2_TAB_LAND,            false },
+    // { STR_OBJECT_SELECTION_STATIONS,                    SPR_TAB_PARK,               false },
+    // { STR_OBJECT_SELECTION_MUSIC,                       SPR_TAB_MUSIC_0,            false },
 };
 
 #pragma region Widgets
 
-enum WINDOW_STAFF_LIST_WIDGET_IDX {
+enum WINDOW_EDITOR_OBJECT_SELECTION_WIDGET_IDX {
     WIDX_BACKGROUND,
     WIDX_TITLE,
     WIDX_CLOSE,
@@ -112,7 +125,7 @@ enum WINDOW_STAFF_LIST_WIDGET_IDX {
     WIDX_PREVIEW,
     WIDX_INSTALL_TRACK,
     WIDX_FILTER_DROPDOWN,
-    WIDX_FILTER_STRING_BUTTON,
+    WIDX_FILTER_TEXT_BOX,
     WIDX_FILTER_CLEAR_BUTTON,
     WIDX_FILTER_RIDE_TAB_FRAME,
     WIDX_FILTER_RIDE_TAB_ALL,
@@ -131,29 +144,27 @@ validate_global_widx(WC_EDITOR_OBJECT_SELECTION, WIDX_TAB_1);
 
 static bool _window_editor_object_selection_widgets_initialised;
 static std::vector<rct_widget> _window_editor_object_selection_widgets = {
-    { WWT_FRAME,            0,  0,      599,    0,      399,    0xFFFFFFFF,                     STR_NONE },
-    { WWT_CAPTION,          0,  1,      598,    1,      14,     STR_OBJECT_SELECTION,           STR_WINDOW_TITLE_TIP },
-    { WWT_CLOSEBOX,         0,  587,    597,    2,      13,     STR_CLOSE_X,                    STR_CLOSE_WINDOW_TIP },
-    { WWT_RESIZE,           1,  0,      599,    43,     399,    0xFFFFFFFF,                     STR_NONE },
-    { WWT_BUTTON,           0,  470,    591,    23,     34,     STR_OBJECT_SELECTION_ADVANCED,  STR_OBJECT_SELECTION_ADVANCED_TIP },
-    { WWT_SCROLL,           1,  4,      291,    60,     386,    SCROLL_VERTICAL,                STR_NONE },
-    { WWT_FLATBTN,          1,  391,    504,    46,     159,    0xFFFFFFFF,                     STR_NONE },
-    { WWT_BUTTON,           0,  470,    591,    23,     34,     STR_INSTALL_NEW_TRACK_DESIGN,   STR_INSTALL_NEW_TRACK_DESIGN_TIP },
-    { WWT_BUTTON,           0,  350,    463,    23,     34,     STR_OBJECT_FILTER,              STR_OBJECT_FILTER_TIP },
-    { WWT_TEXT_BOX,         1,  4,      214,    46,     57,     STR_NONE,                       STR_NONE },
-    { WWT_BUTTON,           1,  218,    287,    46,     57,     STR_OBJECT_SEARCH_CLEAR,        STR_NONE },
-    { WWT_IMGBTN,           1,  3,      287,    73,     76,     0xFFFFFFFF,                     STR_NONE },
-    { WWT_TAB,              1,  3,      33,     47,     73,     IMAGE_TYPE_REMAP | SPR_TAB,           STR_OBJECT_FILTER_ALL_RIDES_TIP },
-    { WWT_TAB,              1,  34,     64,     47,     73,     IMAGE_TYPE_REMAP | SPR_TAB,           STR_TRANSPORT_RIDES_TIP },
-    { WWT_TAB,              1,  65,     95,     47,     73,     IMAGE_TYPE_REMAP | SPR_TAB,           STR_GENTLE_RIDES_TIP },
-    { WWT_TAB,              1,  96,     126,    47,     73,     IMAGE_TYPE_REMAP | SPR_TAB,           STR_ROLLER_COASTERS_TIP },
-    { WWT_TAB,              1,  127,    157,    47,     73,     IMAGE_TYPE_REMAP | SPR_TAB,           STR_THRILL_RIDES_TIP },
-    { WWT_TAB,              1,  158,    188,    47,     73,     IMAGE_TYPE_REMAP | SPR_TAB,           STR_WATER_RIDES_TIP },
-    { WWT_TAB,              1,  189,    219,    47,     73,     IMAGE_TYPE_REMAP | SPR_TAB,           STR_SHOPS_STALLS_TIP },
-    { WWT_TABLE_HEADER,     1,  4,      148,    80,     93,     STR_NONE,                       STR_NONE },
-    { WWT_TABLE_HEADER,     1,  149,    291,    80,     93,     STR_NONE,                       STR_NONE },
+    WINDOW_SHIM(WINDOW_TITLE, WW, WH),
+    MakeWidget({  0, 43}, {600, 357}, WindowWidgetType::Resize,       WindowColour::Secondary                                                                  ),
+    MakeWidget({470, 22}, {122,  14}, WindowWidgetType::Button,       WindowColour::Primary,   STR_OBJECT_SELECTION_ADVANCED, STR_OBJECT_SELECTION_ADVANCED_TIP),
+    MakeWidget({  4, 60}, {288, 327}, WindowWidgetType::Scroll,       WindowColour::Secondary, SCROLL_VERTICAL                                                 ),
+    MakeWidget({391, 45}, {114, 115}, WindowWidgetType::FlatBtn,      WindowColour::Secondary                                                                  ),
+    MakeWidget({470, 22}, {122,  14}, WindowWidgetType::Button,       WindowColour::Primary,   STR_INSTALL_NEW_TRACK_DESIGN,  STR_INSTALL_NEW_TRACK_DESIGN_TIP ),
+    MakeWidget({350, 22}, {114,  14}, WindowWidgetType::Button,       WindowColour::Primary,   STR_OBJECT_FILTER,             STR_OBJECT_FILTER_TIP            ),
+    MakeWidget({  4, 45}, {211,  14}, WindowWidgetType::TextBox,     WindowColour::Secondary                                                                  ),
+    MakeWidget({218, 45}, { 70,  14}, WindowWidgetType::Button,       WindowColour::Secondary, STR_OBJECT_SEARCH_CLEAR                                         ),
+    MakeWidget({  3, 73}, {285,   4}, WindowWidgetType::ImgBtn,       WindowColour::Secondary                                                                  ),
+    MakeTab   ({  3, 47},                                                                                       STR_OBJECT_FILTER_ALL_RIDES_TIP  ),
+    MakeTab   ({ 34, 47},                                                                                       STR_TRANSPORT_RIDES_TIP          ),
+    MakeTab   ({ 65, 47},                                                                                       STR_GENTLE_RIDES_TIP             ),
+    MakeTab   ({ 96, 47},                                                                                       STR_ROLLER_COASTERS_TIP          ),
+    MakeTab   ({127, 47},                                                                                       STR_THRILL_RIDES_TIP             ),
+    MakeTab   ({158, 47},                                                                                       STR_WATER_RIDES_TIP              ),
+    MakeTab   ({189, 47},                                                                                       STR_SHOPS_STALLS_TIP             ),
+    MakeWidget({  4, 80}, {145,  14}, WindowWidgetType::TableHeader, WindowColour::Secondary                                                                  ),
+    MakeWidget({149, 80}, {143,  14}, WindowWidgetType::TableHeader, WindowColour::Secondary                                                                  ),
 
-    { WWT_TAB,              1,  3,      33,     17,     43,     IMAGE_TYPE_REMAP | SPR_TAB,           STR_STRING_DEFINED_TOOLTIP },
+    MakeTab   ({  3, 17},                                                                                       STR_STRING_DEFINED_TOOLTIP       ),
     // Copied object type times...
 
     { WIDGETS_END }
@@ -170,44 +181,31 @@ static void window_editor_object_selection_mousedown(rct_window *w, rct_widgetin
 static void window_editor_object_selection_dropdown(rct_window *w, rct_widgetindex widgetIndex, int32_t dropdownIndex);
 static void window_editor_object_selection_update(rct_window *w);
 static void window_editor_object_selection_scrollgetsize(rct_window *w, int32_t scrollIndex, int32_t *width, int32_t *height);
-static void window_editor_object_selection_scroll_mousedown(rct_window *w, int32_t scrollIndex, int32_t x, int32_t y);
-static void window_editor_object_selection_scroll_mouseover(rct_window *w, int32_t scrollIndex, int32_t x, int32_t y);
-static void window_editor_object_selection_tooltip(rct_window* w, rct_widgetindex widgetIndex, rct_string_id *stringId);
+static void window_editor_object_selection_scroll_mousedown(rct_window *w, int32_t scrollIndex, const ScreenCoordsXY& screenCoords);
+static void window_editor_object_selection_scroll_mouseover(rct_window *w, int32_t scrollIndex, const ScreenCoordsXY& screenCoords);
+static OpenRCT2String window_editor_object_selection_tooltip(rct_window* w, const rct_widgetindex widgetIndex, const rct_string_id fallback);
 static void window_editor_object_selection_invalidate(rct_window *w);
 static void window_editor_object_selection_paint(rct_window *w, rct_drawpixelinfo *dpi);
 static void window_editor_object_selection_scrollpaint(rct_window *w, rct_drawpixelinfo *dpi, int32_t scrollIndex);
 static void window_editor_object_selection_textinput(rct_window *w, rct_widgetindex widgetIndex, char *text);
 
-static rct_window_event_list window_editor_object_selection_events = {
-    window_editor_object_selection_close,
-    window_editor_object_selection_mouseup,
-    window_editor_object_selection_resize,
-    window_editor_object_selection_mousedown,
-    window_editor_object_selection_dropdown,
-    nullptr,
-    window_editor_object_selection_update,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    window_editor_object_selection_scrollgetsize,
-    window_editor_object_selection_scroll_mousedown,
-    nullptr,
-    window_editor_object_selection_scroll_mouseover,
-    window_editor_object_selection_textinput,
-    nullptr,
-    nullptr,
-    window_editor_object_selection_tooltip,
-    nullptr,
-    nullptr,
-    window_editor_object_selection_invalidate,
-    window_editor_object_selection_paint,
-    window_editor_object_selection_scrollpaint
-};
+static rct_window_event_list window_editor_object_selection_events([](auto& events)
+{
+    events.close = &window_editor_object_selection_close;
+    events.mouse_up = &window_editor_object_selection_mouseup;
+    events.resize = &window_editor_object_selection_resize;
+    events.mouse_down = &window_editor_object_selection_mousedown;
+    events.dropdown = &window_editor_object_selection_dropdown;
+    events.update = &window_editor_object_selection_update;
+    events.get_scroll_size = &window_editor_object_selection_scrollgetsize;
+    events.scroll_mousedown = &window_editor_object_selection_scroll_mousedown;
+    events.scroll_mouseover = &window_editor_object_selection_scroll_mouseover;
+    events.text_input = &window_editor_object_selection_textinput;
+    events.tooltip = &window_editor_object_selection_tooltip;
+    events.invalidate = &window_editor_object_selection_invalidate;
+    events.paint = &window_editor_object_selection_paint;
+    events.scroll_paint = &window_editor_object_selection_scrollpaint;
+});
 // clang-format on
 
 #pragma endregion
@@ -217,7 +215,7 @@ static constexpr const int32_t window_editor_object_selection_animation_divisor[
 
 static void window_editor_object_set_page(rct_window* w, int32_t page);
 static void window_editor_object_selection_set_pressed_tab(rct_window* w);
-static int32_t get_object_from_object_selection(uint8_t object_type, int32_t y);
+static int32_t get_object_from_object_selection(ObjectType object_type, int32_t y);
 static void window_editor_object_selection_manage_tracks();
 static void editor_load_selected_objects();
 static bool filter_selected(uint8_t objectFlags);
@@ -226,8 +224,8 @@ static bool filter_source(const ObjectRepositoryItem* item);
 static bool filter_chunks(const ObjectRepositoryItem* item);
 static void filter_update_counts();
 
-static std::string object_get_description(const void* object);
-static int32_t get_selected_object_type(rct_window* w);
+static std::string object_get_description(const Object* object);
+static ObjectType get_selected_object_type(rct_window* w);
 
 enum
 {
@@ -254,7 +252,7 @@ struct list_item
 {
     const ObjectRepositoryItem* repositoryItem;
     rct_object_entry* entry;
-    rct_object_filters* filter;
+    std::unique_ptr<rct_object_filters> filter;
     uint8_t* flags;
 };
 
@@ -265,7 +263,7 @@ using sortFunc_t = bool (*)(const list_item&, const list_item&);
 static std::vector<list_item> _listItems;
 static int32_t _listSortType = RIDE_SORT_TYPE;
 static bool _listSortDescending = false;
-static void* _loadedObject = nullptr;
+static std::unique_ptr<Object> _loadedObject;
 
 static void visible_list_dispose()
 {
@@ -290,7 +288,7 @@ static bool visible_list_sort_ride_type(const list_item& a, const list_item& b)
 
 static void visible_list_refresh(rct_window* w)
 {
-    int32_t numObjects = (int32_t)object_repository_get_items_count();
+    int32_t numObjects = static_cast<int32_t>(object_repository_get_items_count());
 
     visible_list_dispose();
     w->selected_list_item = -1;
@@ -300,25 +298,25 @@ static void visible_list_refresh(rct_window* w)
     {
         uint8_t selectionFlags = _objectSelectionFlags[i];
         const ObjectRepositoryItem* item = &items[i];
-        uint8_t objectType = item->ObjectEntry.flags & 0x0F;
+        ObjectType objectType = item->ObjectEntry.GetType();
         if (objectType == get_selected_object_type(w) && !(selectionFlags & OBJECT_SELECTION_FLAG_6) && filter_source(item)
             && filter_string(item) && filter_chunks(item) && filter_selected(selectionFlags))
         {
-            rct_object_filters* filter = new rct_object_filters;
+            auto filter = std::make_unique<rct_object_filters>();
             filter->ride.category[0] = 0;
             filter->ride.category[1] = 0;
             filter->ride.ride_type = 0;
 
             list_item currentListItem;
             currentListItem.repositoryItem = item;
-            currentListItem.entry = (rct_object_entry*)&item->ObjectEntry;
-            currentListItem.filter = filter;
+            currentListItem.entry = const_cast<rct_object_entry*>(&item->ObjectEntry);
+            currentListItem.filter = std::move(filter);
             currentListItem.flags = &_objectSelectionFlags[i];
             _listItems.push_back(std::move(currentListItem));
         }
     }
 
-    if (_listItems.size() == 0)
+    if (_listItems.empty())
     {
         visible_list_dispose();
     }
@@ -346,7 +344,7 @@ static void visible_list_refresh(rct_window* w)
             }
         }
     }
-    window_invalidate(w);
+    w->Invalidate();
 }
 
 static void window_editor_object_selection_init_widgets()
@@ -356,7 +354,7 @@ static void window_editor_object_selection_init_widgets()
     {
         _window_editor_object_selection_widgets_initialised = true;
         auto tabWidget = widgets[widgets.size() - 2];
-        for (int32_t i = 1; i < OBJECT_TYPE_COUNT; i++)
+        for (size_t i = 1; i < std::size(ObjectSelectionPages); i++)
         {
             widgets.insert(widgets.end() - 1, tabWidget);
         }
@@ -378,25 +376,24 @@ rct_window* window_editor_object_selection_open()
     sub_6AB211();
     reset_selected_object_count_and_size();
 
-    window = window_create_centred(
+    window = WindowCreateCentred(
         600, 400, &window_editor_object_selection_events, WC_EDITOR_OBJECT_SELECTION, WF_10 | WF_RESIZABLE);
     window->widgets = _window_editor_object_selection_widgets.data();
-    window->widgets[WIDX_FILTER_STRING_BUTTON].string = _filter_string;
+    window->widgets[WIDX_FILTER_TEXT_BOX].string = _filter_string;
 
-    window->enabled_widgets = (1 << WIDX_ADVANCED) | (1 << WIDX_INSTALL_TRACK) | (1 << WIDX_FILTER_DROPDOWN)
-        | (1 << WIDX_FILTER_STRING_BUTTON) | (1 << WIDX_FILTER_CLEAR_BUTTON) | (1 << WIDX_CLOSE) | (1 << WIDX_LIST_SORT_TYPE)
-        | (((uint32_t)1) << WIDX_LIST_SORT_RIDE);
+    window->enabled_widgets = (1ULL << WIDX_ADVANCED) | (1ULL << WIDX_INSTALL_TRACK) | (1ULL << WIDX_FILTER_DROPDOWN)
+        | (1ULL << WIDX_FILTER_TEXT_BOX) | (1ULL << WIDX_FILTER_CLEAR_BUTTON) | (1ULL << WIDX_CLOSE)
+        | (1ULL << WIDX_LIST_SORT_TYPE) | (1UL << WIDX_LIST_SORT_RIDE);
 
     _filter_flags = gConfigInterface.object_selection_filter_flags;
-    memset(_filter_string, 0, sizeof(_filter_string));
+    std::fill_n(_filter_string, sizeof(_filter_string), 0x00);
 
-    for (int32_t i = WIDX_TAB_1; i < WIDX_TAB_1 + OBJECT_TYPE_COUNT; i++)
+    for (size_t i = WIDX_TAB_1; i < WIDX_TAB_1 + std::size(ObjectSelectionPages); i++)
     {
         window->enabled_widgets |= (1LL << i);
     }
-    window_init_scroll_widgets(window);
+    WindowInitScrollWidgets(window);
 
-    window->var_4AE = 0;
     window->selected_tab = 0;
     window->selected_list_item = -1;
     window->object_entry = nullptr;
@@ -416,15 +413,12 @@ rct_window* window_editor_object_selection_open()
  */
 static void window_editor_object_selection_close(rct_window* w)
 {
-    // if (!(gScreenFlags & SCREEN_FLAGS_EDITOR))
-    //  return;
-
     unload_unselected_objects();
     editor_load_selected_objects();
     editor_object_flags_free();
 
-    object_delete(_loadedObject);
-    _loadedObject = nullptr;
+    if (_loadedObject != nullptr)
+        _loadedObject->Unload();
 
     if (gScreenFlags & SCREEN_FLAGS_EDITOR)
     {
@@ -457,14 +451,10 @@ static void window_editor_object_selection_mouseup(rct_window* w, rct_widgetinde
     switch (widgetIndex)
     {
         case WIDX_CLOSE:
+            window_close(w);
             if (gScreenFlags & SCREEN_FLAGS_EDITOR)
             {
-                game_do_command(0, 1, 0, 0, GAME_COMMAND_LOAD_OR_QUIT, 1, 0);
-            }
-            else
-            {
-                // Used for in-game object selection cheat
-                window_close(w);
+                finish_object_selection();
             }
             break;
         case WIDX_FILTER_RIDE_TAB_ALL:
@@ -478,7 +468,7 @@ static void window_editor_object_selection_mouseup(rct_window* w, rct_widgetinde
             w->selected_list_item = -1;
             w->object_entry = nullptr;
             w->scrolls[0].v_top = 0;
-            window_invalidate(w);
+            w->Invalidate();
             break;
         case WIDX_FILTER_RIDE_TAB_TRANSPORT:
         case WIDX_FILTER_RIDE_TAB_GENTLE:
@@ -498,12 +488,12 @@ static void window_editor_object_selection_mouseup(rct_window* w, rct_widgetinde
             w->object_entry = nullptr;
             w->scrolls[0].v_top = 0;
             w->frame_no = 0;
-            window_invalidate(w);
+            w->Invalidate();
             break;
 
         case WIDX_ADVANCED:
             w->list_information_type ^= 1;
-            window_invalidate(w);
+            w->Invalidate();
             break;
 
         case WIDX_INSTALL_TRACK:
@@ -512,22 +502,22 @@ static void window_editor_object_selection_mouseup(rct_window* w, rct_widgetinde
             {
                 w->selected_list_item = -1;
             }
-            window_invalidate(w);
+            w->Invalidate();
 
             auto intent = Intent(WC_LOADSAVE);
             intent.putExtra(INTENT_EXTRA_LOADSAVE_TYPE, LOADSAVETYPE_LOAD | LOADSAVETYPE_TRACK);
             context_open_intent(&intent);
             break;
         }
-        case WIDX_FILTER_STRING_BUTTON:
+        case WIDX_FILTER_TEXT_BOX:
             window_start_textbox(w, widgetIndex, STR_STRING, _filter_string, sizeof(_filter_string));
             break;
         case WIDX_FILTER_CLEAR_BUTTON:
-            memset(_filter_string, 0, sizeof(_filter_string));
+            std::fill_n(_filter_string, sizeof(_filter_string), 0x00);
             filter_update_counts();
             w->scrolls->v_top = 0;
             visible_list_refresh(w);
-            window_invalidate(w);
+            w->Invalidate();
             break;
         case WIDX_LIST_SORT_TYPE:
             if (_listSortType == RIDE_SORT_TYPE)
@@ -554,7 +544,7 @@ static void window_editor_object_selection_mouseup(rct_window* w, rct_widgetinde
             visible_list_refresh(w);
             break;
         default:
-            if (widgetIndex >= WIDX_TAB_1 && widgetIndex < WIDX_TAB_1 + OBJECT_TYPE_COUNT)
+            if (widgetIndex >= WIDX_TAB_1 && static_cast<size_t>(widgetIndex) < WIDX_TAB_1 + std::size(ObjectSelectionPages))
             {
                 window_editor_object_set_page(w, widgetIndex - WIDX_TAB_1);
             }
@@ -605,22 +595,22 @@ void window_editor_object_selection_mousedown(rct_window* w, rct_widgetindex wid
                 gDropdownItemsArgs[DDIX_FILTER_NONSELECTED] = STR_NON_SELECTED_ONLY;
             }
 
-            window_dropdown_show_text(
-                w->x + widget->left, w->y + widget->top, widget->bottom - widget->top + 1, w->colours[widget->colour],
-                DROPDOWN_FLAG_STAY_OPEN, _numSourceGameItems + numSelectionItems);
+            WindowDropdownShowText(
+                { w->windowPos.x + widget->left, w->windowPos.y + widget->top }, widget->height() + 1,
+                w->colours[widget->colour], Dropdown::Flag::StayOpen, _numSourceGameItems + numSelectionItems);
 
             for (int32_t i = 0; i < _numSourceGameItems; i++)
             {
                 if (_filter_flags & (1 << i))
                 {
-                    dropdown_set_checked(i, true);
+                    Dropdown::SetChecked(i, true);
                 }
             }
 
             if (!(gScreenFlags & SCREEN_FLAGS_TRACK_MANAGER))
             {
-                dropdown_set_checked(DDIX_FILTER_SELECTED, _FILTER_SELECTED != 0);
-                dropdown_set_checked(DDIX_FILTER_NONSELECTED, _FILTER_NONSELECTED != 0);
+                Dropdown::SetChecked(DDIX_FILTER_SELECTED, _FILTER_SELECTED != 0);
+                Dropdown::SetChecked(DDIX_FILTER_NONSELECTED, _FILTER_NONSELECTED != 0);
             }
             break;
     }
@@ -655,7 +645,7 @@ static void window_editor_object_selection_dropdown(rct_window* w, rct_widgetind
             w->scrolls->v_top = 0;
 
             visible_list_refresh(w);
-            window_invalidate(w);
+            w->Invalidate();
             break;
     }
 }
@@ -666,20 +656,21 @@ static void window_editor_object_selection_dropdown(rct_window* w, rct_widgetind
  */
 static void window_editor_object_selection_scrollgetsize(rct_window* w, int32_t scrollIndex, int32_t* width, int32_t* height)
 {
-    *height = (int32_t)(_listItems.size() * 12);
+    *height = static_cast<int32_t>(_listItems.size() * SCROLLABLE_ROW_HEIGHT);
 }
 
 /**
  *
  *  rct2: 0x006AB0B6
  */
-static void window_editor_object_selection_scroll_mousedown(rct_window* w, int32_t scrollIndex, int32_t x, int32_t y)
+static void window_editor_object_selection_scroll_mousedown(
+    rct_window* w, int32_t scrollIndex, const ScreenCoordsXY& screenCoords)
 {
     // Used for in-game object selection cheat to prevent crashing the game
     // when windows attempt to draw objects that don't exist any more
     window_close_all_except_class(WC_EDITOR_OBJECT_SELECTION);
 
-    int32_t selected_object = get_object_from_object_selection(get_selected_object_type(w), y);
+    int32_t selected_object = get_object_from_object_selection(get_selected_object_type(w), screenCoords.y);
     if (selected_object == -1)
         return;
 
@@ -688,14 +679,14 @@ static void window_editor_object_selection_scroll_mousedown(rct_window* w, int32
     if (object_selection_flags & OBJECT_SELECTION_FLAG_6)
         return;
 
-    window_invalidate(w);
+    w->Invalidate();
 
     const CursorState* state = context_get_cursor_state();
-    audio_play_sound(SOUND_CLICK_1, 0, state->x);
+    OpenRCT2::Audio::Play(OpenRCT2::Audio::SoundId::Click1, 0, state->position.x);
 
     if (gScreenFlags & SCREEN_FLAGS_TRACK_MANAGER)
     {
-        if (!window_editor_object_selection_select_object(0, 1, listItem->entry))
+        if (!window_editor_object_selection_select_object(0, INPUT_FLAG_EDITOR_OBJECT_SELECT, listItem->entry))
             return;
 
         // Close any other open windows such as options/colour schemes to prevent a crash.
@@ -707,17 +698,18 @@ static void window_editor_object_selection_scroll_mousedown(rct_window* w, int32
         return;
     }
 
-    int32_t ebx = 6;
+    int32_t flags = INPUT_FLAG_EDITOR_OBJECT_1 | INPUT_FLAG_EDITOR_OBJECT_SELECT_OBJECTS_IN_SCENERY_GROUP;
     // If already selected
     if (!(object_selection_flags & OBJECT_SELECTION_FLAG_SELECTED))
-        ebx = 7;
+        flags |= INPUT_FLAG_EDITOR_OBJECT_SELECT;
 
     _maxObjectsWasHit = false;
-    if (!window_editor_object_selection_select_object(0, ebx, listItem->entry))
+    if (!window_editor_object_selection_select_object(0, flags, listItem->entry))
     {
-        rct_string_id error_title = (ebx & 1) ? STR_UNABLE_TO_SELECT_THIS_OBJECT : STR_UNABLE_TO_DE_SELECT_THIS_OBJECT;
+        rct_string_id error_title = (flags & INPUT_FLAG_EDITOR_OBJECT_SELECT) ? STR_UNABLE_TO_SELECT_THIS_OBJECT
+                                                                              : STR_UNABLE_TO_DE_SELECT_THIS_OBJECT;
 
-        context_show_error(error_title, gGameCommandErrorText);
+        context_show_error(error_title, gGameCommandErrorText, {});
         return;
     }
 
@@ -725,12 +717,13 @@ static void window_editor_object_selection_scroll_mousedown(rct_window* w, int32
     {
         filter_update_counts();
         visible_list_refresh(w);
-        window_invalidate(w);
+        w->Invalidate();
     }
 
     if (_maxObjectsWasHit)
     {
-        context_show_error(STR_WARNING_TOO_MANY_OBJECTS_SELECTED, STR_NOT_ALL_OBJECTS_IN_THIS_SCENERY_GROUP_COULD_BE_SELECTED);
+        context_show_error(
+            STR_WARNING_TOO_MANY_OBJECTS_SELECTED, STR_NOT_ALL_OBJECTS_IN_THIS_SCENERY_GROUP_COULD_BE_SELECTED, {});
     }
 }
 
@@ -738,9 +731,10 @@ static void window_editor_object_selection_scroll_mousedown(rct_window* w, int32
  *
  *  rct2: 0x006AB079
  */
-static void window_editor_object_selection_scroll_mouseover(rct_window* w, int32_t scrollIndex, int32_t x, int32_t y)
+static void window_editor_object_selection_scroll_mouseover(
+    rct_window* w, int32_t scrollIndex, const ScreenCoordsXY& screenCoords)
 {
-    int32_t selectedObject = get_object_from_object_selection(get_selected_object_type(w), y);
+    int32_t selectedObject = get_object_from_object_selection(get_selected_object_type(w), screenCoords.y);
     if (selectedObject != -1)
     {
         list_item* listItem = &_listItems[selectedObject];
@@ -754,8 +748,8 @@ static void window_editor_object_selection_scroll_mouseover(rct_window* w, int32
     {
         w->selected_list_item = selectedObject;
 
-        object_delete(_loadedObject);
-        _loadedObject = nullptr;
+        if (_loadedObject != nullptr)
+            _loadedObject->Unload();
 
         if (selectedObject == -1)
         {
@@ -768,7 +762,7 @@ static void window_editor_object_selection_scroll_mouseover(rct_window* w, int32
             _loadedObject = object_repository_load_object(listItem->entry);
         }
 
-        window_invalidate(w);
+        w->Invalidate();
     }
 }
 
@@ -776,12 +770,16 @@ static void window_editor_object_selection_scroll_mouseover(rct_window* w, int32
  *
  *  rct2: 0x006AB058
  */
-static void window_editor_object_selection_tooltip(rct_window* w, rct_widgetindex widgetIndex, rct_string_id* stringId)
+static OpenRCT2String window_editor_object_selection_tooltip(
+    rct_window* w, const rct_widgetindex widgetIndex, const rct_string_id fallback)
 {
-    if (widgetIndex >= WIDX_TAB_1 && widgetIndex < WIDX_TAB_1 + OBJECT_TYPE_COUNT)
+    if (widgetIndex >= WIDX_TAB_1 && static_cast<size_t>(widgetIndex) < WIDX_TAB_1 + std::size(ObjectSelectionPages))
     {
-        set_format_arg(0, rct_string_id, ObjectSelectionPages[(widgetIndex - WIDX_TAB_1)].Caption);
+        auto ft = Formatter();
+        ft.Add<rct_string_id>(ObjectSelectionPages[(widgetIndex - WIDX_TAB_1)].Caption);
+        return { fallback, ft };
     }
+    return { fallback, {} };
 }
 
 /**
@@ -810,44 +808,45 @@ static void window_editor_object_selection_invalidate(rct_window* w)
     w->widgets[WIDX_FILTER_DROPDOWN].right = w->width - 137;
 
     // Set pressed widgets
-    w->pressed_widgets |= 1 << WIDX_PREVIEW;
+    w->pressed_widgets |= 1ULL << WIDX_PREVIEW;
     window_editor_object_selection_set_pressed_tab(w);
     if (w->list_information_type & 1)
-        w->pressed_widgets |= (1 << WIDX_ADVANCED);
+        w->pressed_widgets |= (1ULL << WIDX_ADVANCED);
     else
-        w->pressed_widgets &= ~(1 << WIDX_ADVANCED);
+        w->pressed_widgets &= ~(1ULL << WIDX_ADVANCED);
 
     // Set window title and buttons
-    set_format_arg(0, rct_string_id, ObjectSelectionPages[get_selected_object_type(w)].Caption);
+    auto ft = Formatter::Common();
+    ft.Add<rct_string_id>(ObjectSelectionPages[w->selected_tab].Caption);
     if (gScreenFlags & SCREEN_FLAGS_TRACK_MANAGER)
     {
         w->widgets[WIDX_TITLE].text = STR_TRACK_DESIGNS_MANAGER_SELECT_RIDE_TYPE;
-        w->widgets[WIDX_INSTALL_TRACK].type = WWT_BUTTON;
+        w->widgets[WIDX_INSTALL_TRACK].type = WindowWidgetType::Button;
     }
     else if (gScreenFlags & SCREEN_FLAGS_TRACK_DESIGNER)
     {
         w->widgets[WIDX_TITLE].text = STR_ROLLER_COASTER_DESIGNER_SELECT_RIDE_TYPES_VEHICLES;
-        w->widgets[WIDX_INSTALL_TRACK].type = WWT_EMPTY;
+        w->widgets[WIDX_INSTALL_TRACK].type = WindowWidgetType::Empty;
     }
     else
     {
         w->widgets[WIDX_TITLE].text = STR_OBJECT_SELECTION;
-        w->widgets[WIDX_INSTALL_TRACK].type = WWT_EMPTY;
+        w->widgets[WIDX_INSTALL_TRACK].type = WindowWidgetType::Empty;
     }
 
     // Align tabs, hide advanced ones
     bool advancedMode = (w->list_information_type & 1) != 0;
     int32_t x = 3;
-    for (int32_t i = 0; i < OBJECT_TYPE_COUNT; i++)
+    for (size_t i = 0; i < std::size(ObjectSelectionPages); i++)
     {
         auto widget = &w->widgets[WIDX_TAB_1 + i];
         if (!advancedMode && ObjectSelectionPages[i].IsAdvanced)
         {
-            widget->type = WWT_EMPTY;
+            widget->type = WindowWidgetType::Empty;
         }
         else
         {
-            widget->type = WWT_TAB;
+            widget->type = WindowWidgetType::Tab;
             widget->left = x;
             widget->right = x + 30;
             x += 31;
@@ -856,68 +855,69 @@ static void window_editor_object_selection_invalidate(rct_window* w)
 
     if (gScreenFlags & (SCREEN_FLAGS_TRACK_MANAGER | SCREEN_FLAGS_TRACK_DESIGNER))
     {
-        w->widgets[WIDX_ADVANCED].type = WWT_EMPTY;
-        for (int32_t i = 1; i < OBJECT_TYPE_COUNT; i++)
+        w->widgets[WIDX_ADVANCED].type = WindowWidgetType::Empty;
+        for (size_t i = 1; i < std::size(ObjectSelectionPages); i++)
         {
-            w->widgets[WIDX_TAB_1 + i].type = WWT_EMPTY;
+            w->widgets[WIDX_TAB_1 + i].type = WindowWidgetType::Empty;
         }
         x = 150;
     }
     else
     {
-        w->widgets[WIDX_ADVANCED].type = WWT_BUTTON;
+        w->widgets[WIDX_ADVANCED].type = WindowWidgetType::Button;
         x = 300;
     }
 
-    w->widgets[WIDX_FILTER_DROPDOWN].type = WWT_BUTTON;
+    w->widgets[WIDX_FILTER_DROPDOWN].type = WindowWidgetType::Button;
     w->widgets[WIDX_LIST].right = w->width - (600 - 587) - x;
     w->widgets[WIDX_PREVIEW].left = w->width - (600 - 537) - (x / 2);
     w->widgets[WIDX_PREVIEW].right = w->widgets[WIDX_PREVIEW].left + 113;
     w->widgets[WIDX_FILTER_RIDE_TAB_FRAME].right = w->widgets[WIDX_LIST].right;
 
-    bool ridePage = (get_selected_object_type(w) == OBJECT_TYPE_RIDE);
+    bool ridePage = (get_selected_object_type(w) == ObjectType::Ride);
     w->widgets[WIDX_LIST].top = (ridePage ? 118 : 60);
-    w->widgets[WIDX_FILTER_STRING_BUTTON].right = w->widgets[WIDX_LIST].right - 77;
-    w->widgets[WIDX_FILTER_STRING_BUTTON].top = (ridePage ? 80 : 46);
-    w->widgets[WIDX_FILTER_STRING_BUTTON].bottom = (ridePage ? 91 : 57);
+    w->widgets[WIDX_FILTER_TEXT_BOX].right = w->widgets[WIDX_LIST].right - 77;
+    w->widgets[WIDX_FILTER_TEXT_BOX].top = (ridePage ? 79 : 45);
+    w->widgets[WIDX_FILTER_TEXT_BOX].bottom = (ridePage ? 92 : 58);
     w->widgets[WIDX_FILTER_CLEAR_BUTTON].left = w->widgets[WIDX_LIST].right - 73;
     w->widgets[WIDX_FILTER_CLEAR_BUTTON].right = w->widgets[WIDX_LIST].right;
-    w->widgets[WIDX_FILTER_CLEAR_BUTTON].top = (ridePage ? 80 : 46);
-    w->widgets[WIDX_FILTER_CLEAR_BUTTON].bottom = (ridePage ? 91 : 57);
+    w->widgets[WIDX_FILTER_CLEAR_BUTTON].top = (ridePage ? 79 : 45);
+    w->widgets[WIDX_FILTER_CLEAR_BUTTON].bottom = (ridePage ? 92 : 58);
 
     if (ridePage)
     {
-        w->enabled_widgets |= (1 << WIDX_FILTER_RIDE_TAB_ALL) | (1 << WIDX_FILTER_RIDE_TAB_TRANSPORT)
-            | (1 << WIDX_FILTER_RIDE_TAB_GENTLE) | (1 << WIDX_FILTER_RIDE_TAB_COASTER) | (1 << WIDX_FILTER_RIDE_TAB_THRILL)
-            | (1 << WIDX_FILTER_RIDE_TAB_WATER) | (1 << WIDX_FILTER_RIDE_TAB_STALL);
+        w->enabled_widgets |= (1ULL << WIDX_FILTER_RIDE_TAB_ALL) | (1ULL << WIDX_FILTER_RIDE_TAB_TRANSPORT)
+            | (1ULL << WIDX_FILTER_RIDE_TAB_GENTLE) | (1ULL << WIDX_FILTER_RIDE_TAB_COASTER)
+            | (1ULL << WIDX_FILTER_RIDE_TAB_THRILL) | (1ULL << WIDX_FILTER_RIDE_TAB_WATER)
+            | (1ULL << WIDX_FILTER_RIDE_TAB_STALL);
 
         for (int32_t i = 0; i < 7; i++)
             w->pressed_widgets &= ~(1 << (WIDX_FILTER_RIDE_TAB_ALL + i));
 
         if ((_filter_flags & FILTER_RIDES) == FILTER_RIDES)
-            w->pressed_widgets |= (1 << WIDX_FILTER_RIDE_TAB_ALL);
+            w->pressed_widgets |= (1ULL << WIDX_FILTER_RIDE_TAB_ALL);
         else
         {
             for (int32_t i = 0; i < 6; i++)
             {
                 if (_filter_flags & (1 << (_numSourceGameItems + i)))
-                    w->pressed_widgets |= (uint64_t)(1ULL << (WIDX_FILTER_RIDE_TAB_TRANSPORT + i));
+                    w->pressed_widgets |= 1ULL << (WIDX_FILTER_RIDE_TAB_TRANSPORT + i);
             }
         }
 
-        w->widgets[WIDX_FILTER_RIDE_TAB_FRAME].type = WWT_IMGBTN;
+        w->widgets[WIDX_FILTER_RIDE_TAB_FRAME].type = WindowWidgetType::ImgBtn;
         for (int32_t i = WIDX_FILTER_RIDE_TAB_ALL; i <= WIDX_FILTER_RIDE_TAB_STALL; i++)
-            w->widgets[i].type = WWT_TAB;
+            w->widgets[i].type = WindowWidgetType::Tab;
 
-        int32_t width_limit = (w->widgets[WIDX_LIST].right - w->widgets[WIDX_LIST].left - 15) / 2;
+        int32_t width_limit = (w->widgets[WIDX_LIST].width() - 15) / 2;
 
-        w->widgets[WIDX_LIST_SORT_TYPE].type = WWT_TABLE_HEADER;
-        w->widgets[WIDX_LIST_SORT_TYPE].top = w->widgets[WIDX_FILTER_STRING_BUTTON].bottom + 3;
+        w->widgets[WIDX_LIST_SORT_TYPE].type = WindowWidgetType::TableHeader;
+        w->widgets[WIDX_LIST_SORT_TYPE].top = w->widgets[WIDX_FILTER_TEXT_BOX].bottom + 3;
         w->widgets[WIDX_LIST_SORT_TYPE].bottom = w->widgets[WIDX_LIST_SORT_TYPE].top + 13;
         w->widgets[WIDX_LIST_SORT_TYPE].left = 4;
         w->widgets[WIDX_LIST_SORT_TYPE].right = w->widgets[WIDX_LIST_SORT_TYPE].left + width_limit;
 
-        w->widgets[WIDX_LIST_SORT_RIDE].type = WWT_TABLE_HEADER;
+        w->widgets[WIDX_LIST_SORT_RIDE].type = WindowWidgetType::TableHeader;
         w->widgets[WIDX_LIST_SORT_RIDE].top = w->widgets[WIDX_LIST_SORT_TYPE].top;
         w->widgets[WIDX_LIST_SORT_RIDE].bottom = w->widgets[WIDX_LIST_SORT_TYPE].bottom;
         w->widgets[WIDX_LIST_SORT_RIDE].left = w->widgets[WIDX_LIST_SORT_TYPE].right + 1;
@@ -928,14 +928,129 @@ static void window_editor_object_selection_invalidate(rct_window* w)
     else
     {
         w->enabled_widgets &= ~(
-            (1 << WIDX_FILTER_RIDE_TAB_ALL) | (1 << WIDX_FILTER_RIDE_TAB_TRANSPORT) | (1 << WIDX_FILTER_RIDE_TAB_GENTLE)
-            | (1 << WIDX_FILTER_RIDE_TAB_COASTER) | (1 << WIDX_FILTER_RIDE_TAB_THRILL) | (1 << WIDX_FILTER_RIDE_TAB_WATER)
-            | (1 << WIDX_FILTER_RIDE_TAB_STALL));
+            (1ULL << WIDX_FILTER_RIDE_TAB_ALL) | (1ULL << WIDX_FILTER_RIDE_TAB_TRANSPORT)
+            | (1ULL << WIDX_FILTER_RIDE_TAB_GENTLE) | (1ULL << WIDX_FILTER_RIDE_TAB_COASTER)
+            | (1ULL << WIDX_FILTER_RIDE_TAB_THRILL) | (1ULL << WIDX_FILTER_RIDE_TAB_WATER)
+            | (1ULL << WIDX_FILTER_RIDE_TAB_STALL));
         for (int32_t i = WIDX_FILTER_RIDE_TAB_FRAME; i <= WIDX_FILTER_RIDE_TAB_STALL; i++)
-            w->widgets[i].type = WWT_EMPTY;
+            w->widgets[i].type = WindowWidgetType::Empty;
 
-        w->widgets[WIDX_LIST_SORT_TYPE].type = WWT_EMPTY;
-        w->widgets[WIDX_LIST_SORT_RIDE].type = WWT_EMPTY;
+        w->widgets[WIDX_LIST_SORT_TYPE].type = WindowWidgetType::Empty;
+        w->widgets[WIDX_LIST_SORT_RIDE].type = WindowWidgetType::Empty;
+    }
+}
+
+static void window_editor_object_selection_paint_descriptions(rct_window* w, rct_drawpixelinfo* dpi)
+{
+    auto widget = &w->widgets[WIDX_PREVIEW];
+    auto screenPos = w->windowPos + ScreenCoordsXY{ w->widgets[WIDX_LIST].right + 4, widget->bottom + 23 };
+    auto width = w->windowPos.x + w->width - screenPos.x - 4;
+
+    auto description = object_get_description(_loadedObject.get());
+    if (!description.empty())
+    {
+        auto ft = Formatter();
+        ft.Add<rct_string_id>(STR_STRING);
+        ft.Add<const char*>(description.c_str());
+
+        screenPos.y += DrawTextWrapped(dpi, screenPos, width, STR_WINDOW_COLOUR_2_STRINGID, ft) + LIST_ROW_HEIGHT;
+    }
+    if (get_selected_object_type(w) == ObjectType::Ride)
+    {
+        auto* rideObject = reinterpret_cast<RideObject*>(_loadedObject.get());
+        const auto* rideEntry = reinterpret_cast<rct_ride_entry*>(rideObject->GetLegacyData());
+        if (rideEntry->shop_item[0] != ShopItem::None)
+        {
+            std::string sells = "";
+            for (size_t i = 0; i < std::size(rideEntry->shop_item); i++)
+            {
+                if (rideEntry->shop_item[i] == ShopItem::None)
+                    continue;
+
+                if (!sells.empty())
+                    sells += ", ";
+
+                sells += language_get_string(GetShopItemDescriptor(rideEntry->shop_item[i]).Naming.Plural);
+            }
+            auto ft = Formatter();
+            ft.Add<const char*>(sells.c_str());
+            screenPos.y += DrawTextWrapped(dpi, screenPos, width, STR_RIDE_OBJECT_SHOP_SELLS, ft) + 2;
+        }
+    }
+    else if (get_selected_object_type(w) == ObjectType::SceneryGroup)
+    {
+        const auto* sceneryGroupObject = reinterpret_cast<SceneryGroupObject*>(_loadedObject.get());
+        auto ft = Formatter();
+        ft.Add<uint16_t>(sceneryGroupObject->GetNumIncludedObjects());
+        screenPos.y += DrawTextWrapped(dpi, screenPos, width, STR_INCLUDES_X_OBJECTS, ft) + 2;
+    }
+    else if (get_selected_object_type(w) == ObjectType::Music)
+    {
+        screenPos.y += DrawTextWrapped(dpi, screenPos, width, STR_MUSIC_OBJECT_TRACK_HEADER) + 2;
+        const auto* musicObject = reinterpret_cast<MusicObject*>(_loadedObject.get());
+        for (size_t i = 0; i < musicObject->GetTrackCount(); i++)
+        {
+            const auto* track = musicObject->GetTrack(i);
+            if (track->Name.empty())
+                continue;
+
+            auto stringId = track->Composer.empty() ? STR_MUSIC_OBJECT_TRACK_LIST_ITEM
+                                                    : STR_MUSIC_OBJECT_TRACK_LIST_ITEM_WITH_COMPOSER;
+            auto ft = Formatter();
+            ft.Add<const char*>(track->Name.c_str());
+            ft.Add<const char*>(track->Composer.c_str());
+            screenPos.y += DrawTextWrapped(dpi, screenPos + ScreenCoordsXY{ 10, 0 }, width, stringId, ft);
+        }
+    }
+}
+
+static void window_editor_object_selection_paint_debug_data(rct_window* w, rct_drawpixelinfo* dpi)
+{
+    list_item* listItem = &_listItems[w->selected_list_item];
+    auto screenPos = w->windowPos + ScreenCoordsXY{ w->width - 5, w->height - (LIST_ROW_HEIGHT * 5) };
+    // Draw ride type.
+    if (get_selected_object_type(w) == ObjectType::Ride)
+    {
+        auto stringId = get_ride_type_string_id(listItem->repositoryItem);
+        DrawTextBasic(dpi, screenPos, stringId, {}, { COLOUR_WHITE, TextAlignment::RIGHT });
+    }
+
+    screenPos.y += LIST_ROW_HEIGHT;
+
+    // Draw object source
+    auto stringId = object_manager_get_source_game_string(listItem->repositoryItem->GetFirstSourceGame());
+    DrawTextBasic(dpi, screenPos, stringId, {}, { COLOUR_WHITE, TextAlignment::RIGHT });
+    screenPos.y += LIST_ROW_HEIGHT;
+
+    // Draw object dat name
+    {
+        const char* path = path_get_filename(listItem->repositoryItem->Path.c_str());
+        auto ft = Formatter();
+        ft.Add<rct_string_id>(STR_STRING);
+        ft.Add<const char*>(path);
+        DrawTextBasic(
+            dpi, { w->windowPos.x + w->width - 5, screenPos.y }, STR_WINDOW_COLOUR_2_STRINGID, ft,
+            { COLOUR_BLACK, TextAlignment::RIGHT });
+        screenPos.y += LIST_ROW_HEIGHT;
+    }
+
+    // Draw object author (will be blank space if no author in file or a non JSON object)
+    {
+        auto ft = Formatter();
+        std::string authorsString;
+        for (size_t i = 0; i < listItem->repositoryItem->Authors.size(); i++)
+        {
+            if (i > 0)
+            {
+                authorsString.append(", ");
+            }
+            authorsString.append(listItem->repositoryItem->Authors[i]);
+        }
+        ft.Add<rct_string_id>(STR_STRING);
+        ft.Add<const char*>(authorsString.c_str());
+        DrawTextEllipsised(
+            dpi, { w->windowPos.x + w->width - 5, screenPos.y }, w->width - w->widgets[WIDX_LIST].right - 4,
+            STR_WINDOW_COLOUR_2_STRINGID, ft, { TextAlignment::RIGHT });
     }
 }
 
@@ -945,22 +1060,20 @@ static void window_editor_object_selection_invalidate(rct_window* w)
  */
 static void window_editor_object_selection_paint(rct_window* w, rct_drawpixelinfo* dpi)
 {
-    int32_t i, x, y, width;
+    int32_t width;
     rct_widget* widget;
-    rct_string_id stringId;
 
-    window_draw_widgets(w, dpi);
+    WindowDrawWidgets(w, dpi);
 
     // Draw tabs
-    for (i = 0; i < OBJECT_TYPE_COUNT; i++)
+    for (size_t i = 0; i < std::size(ObjectSelectionPages); i++)
     {
         widget = &w->widgets[WIDX_TAB_1 + i];
-        if (widget->type != WWT_EMPTY)
+        if (widget->type != WindowWidgetType::Empty)
         {
-            auto image = ObjectSelectionPages[i].Image;
-            x = w->x + widget->left;
-            y = w->y + widget->top;
-            gfx_draw_sprite(dpi, image, x, y, 0);
+            auto image = ImageId(ObjectSelectionPages[i].Image);
+            auto screenPos = w->windowPos + ScreenCoordsXY{ widget->left, widget->top };
+            gfx_draw_sprite(dpi, image, screenPos);
         }
     }
 
@@ -971,12 +1084,12 @@ static void window_editor_object_selection_paint(rct_window* w, rct_drawpixelinf
     const int32_t ThrillRidesTabAnimationSequence[] = { 5, 6, 5, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 0, 0, 0 };
 
     // Draw ride tabs
-    if (get_selected_object_type(w) == OBJECT_TYPE_RIDE)
+    if (get_selected_object_type(w) == ObjectType::Ride)
     {
-        for (i = 0; i < 7; i++)
+        for (int32_t i = 0; i < 7; i++)
         {
             widget = &w->widgets[WIDX_FILTER_RIDE_TAB_ALL + i];
-            if (widget->type == WWT_EMPTY)
+            if (widget->type == WindowWidgetType::Empty)
                 continue;
 
             int32_t spriteIndex = ride_tabs[i];
@@ -987,50 +1100,53 @@ static void window_editor_object_selection_paint(rct_window* w, rct_drawpixelinf
             }
             spriteIndex += (i == 4 ? ThrillRidesTabAnimationSequence[frame] : frame);
 
-            x = w->x + widget->left;
-            y = w->y + widget->top;
-            gfx_draw_sprite(dpi, spriteIndex | (w->colours[1] << 19), x, y, 0);
+            auto screenPos = w->windowPos + ScreenCoordsXY{ widget->left, widget->top };
+            gfx_draw_sprite(dpi, ImageId(spriteIndex, w->colours[1]), screenPos);
         }
     }
 
     // Preview background
     widget = &w->widgets[WIDX_PREVIEW];
     gfx_fill_rect(
-        dpi, w->x + widget->left + 1, w->y + widget->top + 1, w->x + widget->right - 1, w->y + widget->bottom - 1,
+        dpi,
+        { w->windowPos + ScreenCoordsXY{ widget->left + 1, widget->top + 1 },
+          w->windowPos + ScreenCoordsXY{ widget->right - 1, widget->bottom - 1 } },
         ColourMapA[w->colours[1]].darkest);
 
     // Draw number of selected items
     if (!(gScreenFlags & SCREEN_FLAGS_TRACK_MANAGER))
     {
-        x = w->x + 3;
-        y = w->y + w->height - 13;
+        auto screenPos = w->windowPos + ScreenCoordsXY{ 3, w->height - 13 };
 
-        int32_t numSelected = _numSelectedObjectsForType[get_selected_object_type(w)];
-        int32_t totalSelectable = object_entry_group_counts[get_selected_object_type(w)];
-        if (gScreenFlags & SCREEN_FLAGS_TRACK_DESIGNER)
-            totalSelectable = 4;
+        int32_t numSelected = _numSelectedObjectsForType[EnumValue(get_selected_object_type(w))];
+        int32_t totalSelectable = object_entry_group_counts[EnumValue(get_selected_object_type(w))];
 
-        set_format_arg(0, uint16_t, numSelected);
-        set_format_arg(2, uint16_t, totalSelectable);
-        gfx_draw_string_left(dpi, STR_OBJECT_SELECTION_SELECTION_SIZE, gCommonFormatArgs, COLOUR_BLACK, x, y);
+        auto ft = Formatter();
+        ft.Add<uint16_t>(numSelected);
+        ft.Add<uint16_t>(totalSelectable);
+        DrawTextBasic(dpi, screenPos, STR_OBJECT_SELECTION_SELECTION_SIZE, ft);
     }
 
     // Draw sort button text
     widget = &w->widgets[WIDX_LIST_SORT_TYPE];
-    if (widget->type != WWT_EMPTY)
+    if (widget->type != WindowWidgetType::Empty)
     {
-        stringId = _listSortType == RIDE_SORT_TYPE ? (_listSortDescending ? STR_DOWN : STR_UP) : STR_NONE;
-        gfx_draw_string_left_clipped(
-            dpi, STR_OBJECTS_SORT_TYPE, &stringId, w->colours[1], w->x + widget->left + 1, w->y + widget->top + 1,
-            widget->right - widget->left);
+        auto ft = Formatter();
+        auto stringId = _listSortType == RIDE_SORT_TYPE ? static_cast<rct_string_id>(_listSortDescending ? STR_DOWN : STR_UP)
+                                                        : STR_NONE;
+        ft.Add<rct_string_id>(stringId);
+        auto screenPos = w->windowPos + ScreenCoordsXY{ widget->left + 1, widget->top + 1 };
+        DrawTextEllipsised(dpi, screenPos, widget->width(), STR_OBJECTS_SORT_TYPE, ft, { w->colours[1] });
     }
     widget = &w->widgets[WIDX_LIST_SORT_RIDE];
-    if (widget->type != WWT_EMPTY)
+    if (widget->type != WindowWidgetType::Empty)
     {
-        stringId = _listSortType == RIDE_SORT_RIDE ? (_listSortDescending ? STR_DOWN : STR_UP) : STR_NONE;
-        gfx_draw_string_left_clipped(
-            dpi, STR_OBJECTS_SORT_RIDE, &stringId, w->colours[1], w->x + widget->left + 1, w->y + widget->top + 1,
-            widget->right - widget->left);
+        auto ft = Formatter();
+        auto stringId = _listSortType == RIDE_SORT_RIDE ? static_cast<rct_string_id>(_listSortDescending ? STR_DOWN : STR_UP)
+                                                        : STR_NONE;
+        ft.Add<rct_string_id>(stringId);
+        auto screenPos = w->windowPos + ScreenCoordsXY{ widget->left + 1, widget->top + 1 };
+        DrawTextEllipsised(dpi, screenPos, widget->width(), STR_OBJECTS_SORT_RIDE, ft, { w->colours[1] });
     }
 
     if (w->selected_list_item == -1 || _loadedObject == nullptr)
@@ -1042,128 +1158,98 @@ static void window_editor_object_selection_paint(rct_window* w, rct_drawpixelinf
     widget = &w->widgets[WIDX_PREVIEW];
     {
         rct_drawpixelinfo clipDPI;
-        x = w->x + widget->left + 1;
-        y = w->y + widget->top + 1;
-        width = widget->right - widget->left - 1;
-        int32_t height = widget->bottom - widget->top - 1;
-        if (clip_drawpixelinfo(&clipDPI, dpi, x, y, width, height))
+        auto screenPos = w->windowPos + ScreenCoordsXY{ widget->left + 1, widget->top + 1 };
+        width = widget->width() - 1;
+        int32_t height = widget->height() - 1;
+        if (clip_drawpixelinfo(&clipDPI, dpi, screenPos, width, height))
         {
-            object_draw_preview(_loadedObject, &clipDPI, width, height);
+            _loadedObject->DrawPreview(&clipDPI, width, height);
         }
     }
 
     // Draw name of object
-    x = w->x + (widget->left + widget->right) / 2 + 1;
-    y = w->y + widget->bottom + 3;
-    width = w->width - w->widgets[WIDX_LIST].right - 6;
-    set_format_arg(0, rct_string_id, STR_STRING);
-    set_format_arg(2, const char*, listItem->repositoryItem->Name.c_str());
-    gfx_draw_string_centred_clipped(dpi, STR_WINDOW_COLOUR_2_STRINGID, gCommonFormatArgs, COLOUR_BLACK, x, y, width);
-
-    // Draw description of object
-    auto description = object_get_description(_loadedObject);
-    if (!description.empty())
     {
-        set_format_arg(0, rct_string_id, STR_STRING);
-        set_format_arg(2, const char*, description.c_str());
-
-        x = w->x + w->widgets[WIDX_LIST].right + 4;
-        y += 15;
-        width = w->x + w->width - x - 4;
-
-        gfx_draw_string_left_wrapped(dpi, gCommonFormatArgs, x, y + 5, width, STR_WINDOW_COLOUR_2_STRINGID, COLOUR_BLACK);
+        auto screenPos = w->windowPos + ScreenCoordsXY{ widget->midX() + 1, widget->bottom + 3 };
+        width = w->width - w->widgets[WIDX_LIST].right - 6;
+        auto ft = Formatter();
+        ft.Add<rct_string_id>(STR_STRING);
+        ft.Add<const char*>(listItem->repositoryItem->Name.c_str());
+        DrawTextEllipsised(dpi, screenPos, width, STR_WINDOW_COLOUR_2_STRINGID, ft, { TextAlignment::CENTRE });
     }
 
-    y = w->y + w->height - (12 * 4);
-
-    // Draw ride type.
-    if (get_selected_object_type(w) == OBJECT_TYPE_RIDE)
-    {
-        stringId = get_ride_type_string_id(listItem->repositoryItem);
-        gfx_draw_string_right(dpi, stringId, nullptr, COLOUR_WHITE, w->x + w->width - 5, y);
-    }
-
-    y += 12;
-
-    // Draw object source
-    stringId = object_manager_get_source_game_string(listItem->repositoryItem->GetFirstSourceGame());
-    gfx_draw_string_right(dpi, stringId, nullptr, COLOUR_WHITE, w->x + w->width - 5, y);
-    y += 12;
-
-    // Draw object dat name
-    const char* path = path_get_filename(listItem->repositoryItem->Path.c_str());
-    set_format_arg(0, rct_string_id, STR_STRING);
-    set_format_arg(2, const char*, path);
-    gfx_draw_string_right(dpi, STR_WINDOW_COLOUR_2_STRINGID, gCommonFormatArgs, COLOUR_BLACK, w->x + w->width - 5, y);
+    window_editor_object_selection_paint_descriptions(w, dpi);
+    window_editor_object_selection_paint_debug_data(w, dpi);
 }
-
 /**
  *
  *  rct2: 0x006AADA3
  */
 static void window_editor_object_selection_scrollpaint(rct_window* w, rct_drawpixelinfo* dpi, int32_t scrollIndex)
 {
-    int32_t x, y, colour, colour2;
+    ScreenCoordsXY screenCoords;
 
-    bool ridePage = (get_selected_object_type(w) == OBJECT_TYPE_RIDE);
+    bool ridePage = (get_selected_object_type(w) == ObjectType::Ride);
 
     uint8_t paletteIndex = ColourMapA[w->colours[1]].mid_light;
     gfx_clear(dpi, paletteIndex);
 
-    y = 0;
+    screenCoords.y = 0;
     for (const auto& listItem : _listItems)
     {
-        if (y + 12 >= dpi->y && y <= dpi->y + dpi->height)
+        if (screenCoords.y + SCROLLABLE_ROW_HEIGHT >= dpi->y && screenCoords.y <= dpi->y + dpi->height)
         {
             // Draw checkbox
             if (!(gScreenFlags & SCREEN_FLAGS_TRACK_MANAGER) && !(*listItem.flags & 0x20))
-                gfx_fill_rect_inset(dpi, 2, y, 11, y + 10, w->colours[1], INSET_RECT_F_E0);
+                gfx_fill_rect_inset(
+                    dpi, { { 2, screenCoords.y }, { 11, screenCoords.y + 10 } }, w->colours[1], INSET_RECT_F_E0);
 
             // Highlight background
-            colour = COLOUR_BRIGHT_GREEN | COLOUR_FLAG_TRANSLUCENT;
-            if (listItem.entry == w->object_entry && !(*listItem.flags & OBJECT_SELECTION_FLAG_6))
+            auto highlighted = listItem.entry == w->object_entry && !(*listItem.flags & OBJECT_SELECTION_FLAG_6);
+            if (highlighted)
             {
-                gfx_filter_rect(dpi, 0, y, w->width, y + 11, PALETTE_DARKEN_1);
-                colour = COLOUR_BRIGHT_GREEN;
+                auto bottom = screenCoords.y + (SCROLLABLE_ROW_HEIGHT - 1);
+                gfx_filter_rect(dpi, 0, screenCoords.y, w->width, bottom, FilterPaletteID::PaletteDarken1);
             }
 
             // Draw checkmark
             if (!(gScreenFlags & SCREEN_FLAGS_TRACK_MANAGER) && (*listItem.flags & OBJECT_SELECTION_FLAG_SELECTED))
             {
-                x = 2;
-                gCurrentFontSpriteBase = colour == COLOUR_BRIGHT_GREEN ? FONT_SPRITE_BASE_MEDIUM_EXTRA_DARK
-                                                                       : FONT_SPRITE_BASE_MEDIUM_DARK;
-                colour2 = NOT_TRANSLUCENT(w->colours[1]);
+                screenCoords.x = 2;
+                FontSpriteBase fontSpriteBase = highlighted ? FontSpriteBase::MEDIUM_EXTRA_DARK : FontSpriteBase::MEDIUM_DARK;
+                colour_t colour2 = NOT_TRANSLUCENT(w->colours[1]);
                 if (*listItem.flags & (OBJECT_SELECTION_FLAG_IN_USE | OBJECT_SELECTION_FLAG_ALWAYS_REQUIRED))
                     colour2 |= COLOUR_FLAG_INSET;
 
-                gfx_draw_string(dpi, (char*)CheckBoxMarkString, colour2, x, y);
+                gfx_draw_string(
+                    dpi, screenCoords, static_cast<const char*>(CheckBoxMarkString),
+                    { static_cast<colour_t>(colour2), fontSpriteBase });
             }
 
-            x = gScreenFlags & SCREEN_FLAGS_TRACK_MANAGER ? 0 : 15;
+            screenCoords.x = gScreenFlags & SCREEN_FLAGS_TRACK_MANAGER ? 0 : 15;
 
-            char* bufferWithColour = gCommonStringFormatBuffer;
-            char* buffer = utf8_write_codepoint(bufferWithColour, colour);
+            auto bufferWithColour = strcpy(gCommonStringFormatBuffer, highlighted ? "{WINDOW_COLOUR_2}" : "{BLACK}");
+            auto buffer = strchr(bufferWithColour, '\0');
+
+            colour_t colour = COLOUR_BLACK;
+            FontSpriteBase fontSpriteBase = FontSpriteBase::MEDIUM;
             if (*listItem.flags & OBJECT_SELECTION_FLAG_6)
             {
                 colour = w->colours[1] & 0x7F;
-                gCurrentFontSpriteBase = FONT_SPRITE_BASE_MEDIUM_DARK;
-            }
-            else
-            {
-                colour = COLOUR_BLACK;
-                gCurrentFontSpriteBase = FONT_SPRITE_BASE_MEDIUM;
+                fontSpriteBase = FontSpriteBase::MEDIUM_DARK;
             }
 
-            int32_t width_limit = (w->widgets[WIDX_LIST].right - w->widgets[WIDX_LIST].left - x) / 2;
+            int32_t width_limit = w->widgets[WIDX_LIST].width() - screenCoords.x;
 
             if (ridePage)
             {
+                width_limit /= 2;
                 // Draw ride type
                 rct_string_id rideTypeStringId = get_ride_type_string_id(listItem.repositoryItem);
                 safe_strcpy(buffer, language_get_string(rideTypeStringId), 256 - (buffer - bufferWithColour));
-                gfx_draw_string_left_clipped(dpi, STR_STRING, &bufferWithColour, colour, x, y, width_limit - 15);
-                x = w->widgets[WIDX_LIST_SORT_RIDE].left - w->widgets[WIDX_LIST].left;
+                auto ft = Formatter();
+                ft.Add<const char*>(gCommonStringFormatBuffer);
+                DrawTextEllipsised(dpi, screenCoords, width_limit - 15, STR_STRING, ft, { colour, fontSpriteBase });
+                screenCoords.x = w->widgets[WIDX_LIST_SORT_RIDE].left - w->widgets[WIDX_LIST].left;
             }
 
             // Draw text
@@ -1175,9 +1261,11 @@ static void window_editor_object_selection_scrollpaint(rct_window* w, rct_drawpi
 
                 *buffer = 0;
             }
-            gfx_draw_string_left_clipped(dpi, STR_STRING, &bufferWithColour, colour, x, y, width_limit);
+            auto ft = Formatter();
+            ft.Add<const char*>(gCommonStringFormatBuffer);
+            DrawTextEllipsised(dpi, screenCoords, width_limit, STR_STRING, ft, { colour, fontSpriteBase });
         }
-        y += 12;
+        screenCoords.y += SCROLLABLE_ROW_HEIGHT;
     }
 }
 
@@ -1192,7 +1280,7 @@ static void window_editor_object_set_page(rct_window* w, int32_t page)
     w->scrolls[0].v_top = 0;
     w->frame_no = 0;
 
-    if (page == OBJECT_TYPE_RIDE)
+    if (page == EnumValue(ObjectType::Ride))
     {
         _listSortType = RIDE_SORT_TYPE;
         _listSortDescending = false;
@@ -1204,12 +1292,12 @@ static void window_editor_object_set_page(rct_window* w, int32_t page)
     }
 
     visible_list_refresh(w);
-    window_invalidate(w);
+    w->Invalidate();
 }
 
 static void window_editor_object_selection_set_pressed_tab(rct_window* w)
 {
-    for (int32_t i = 0; i < OBJECT_TYPE_COUNT; i++)
+    for (size_t i = 0; i < std::size(ObjectSelectionPages); i++)
     {
         w->pressed_widgets &= ~(1 << (WIDX_TAB_1 + i));
     }
@@ -1224,10 +1312,10 @@ static void window_editor_object_selection_set_pressed_tab(rct_window* w)
  *
  *  rct2: 0x006AA703
  */
-static int32_t get_object_from_object_selection(uint8_t object_type, int32_t y)
+static int32_t get_object_from_object_selection(ObjectType object_type, int32_t y)
 {
-    int32_t listItemIndex = y / 12;
-    if (listItemIndex < 0 || (size_t)listItemIndex >= _listItems.size())
+    int32_t listItemIndex = y / SCROLLABLE_ROW_HEIGHT;
+    if (listItemIndex < 0 || static_cast<size_t>(listItemIndex) >= _listItems.size())
         return -1;
 
     return listItemIndex;
@@ -1242,10 +1330,10 @@ static void window_editor_object_selection_manage_tracks()
     set_every_ride_type_invented();
     set_every_ride_entry_invented();
 
-    gS6Info.editor_step = EDITOR_STEP_TRACK_DESIGNS_MANAGER;
+    gS6Info.editor_step = EditorStep::DesignsManager;
 
     int32_t entry_index = 0;
-    for (; object_entry_get_chunk(OBJECT_TYPE_RIDE, entry_index) == nullptr; entry_index++)
+    for (; object_entry_get_chunk(ObjectType::Ride, entry_index) == nullptr; entry_index++)
         ;
 
     rct_ride_entry* ride_entry = get_ride_entry(entry_index);
@@ -1263,7 +1351,7 @@ static void window_editor_object_selection_manage_tracks()
  */
 static void editor_load_selected_objects()
 {
-    int32_t numItems = (int32_t)object_repository_get_items_count();
+    int32_t numItems = static_cast<int32_t>(object_repository_get_items_count());
     const ObjectRepositoryItem* items = object_repository_get_items();
     for (int32_t i = 0; i < numItems; i++)
     {
@@ -1271,7 +1359,7 @@ static void editor_load_selected_objects()
         {
             const ObjectRepositoryItem* item = &items[i];
             const rct_object_entry* entry = &item->ObjectEntry;
-            void* loadedObject = object_manager_get_loaded_object(entry);
+            const auto* loadedObject = object_manager_get_loaded_object(ObjectEntryDescriptor(*item));
             if (loadedObject == nullptr)
             {
                 loadedObject = object_manager_load_object(entry);
@@ -1282,21 +1370,27 @@ static void editor_load_selected_objects()
                 else if (!(gScreenFlags & SCREEN_FLAGS_EDITOR))
                 {
                     // Defaults selected items to researched (if in-game)
-                    uint8_t objectType = object_entry_get_type(entry);
-                    uint8_t entryIndex = object_manager_get_loaded_object_entry_index(loadedObject);
-                    if (objectType == OBJECT_TYPE_RIDE)
+                    ObjectType objectType = entry->GetType();
+                    auto entryIndex = object_manager_get_loaded_object_entry_index(loadedObject);
+                    if (objectType == ObjectType::Ride)
                     {
                         rct_ride_entry* rideEntry = get_ride_entry(entryIndex);
                         uint8_t rideType = ride_entry_get_first_non_null_ride_type(rideEntry);
-                        research_insert(1, RESEARCH_ENTRY_RIDE_MASK | (rideType << 8) | entryIndex, rideEntry->category[0]);
+                        ResearchCategory category = static_cast<ResearchCategory>(GetRideTypeDescriptor(rideType).Category);
+                        research_insert_ride_entry(rideType, entryIndex, category, true);
                     }
-                    else if (objectType == OBJECT_TYPE_SCENERY_GROUP)
+                    else if (objectType == ObjectType::SceneryGroup)
                     {
-                        research_insert(1, entryIndex, RESEARCH_CATEGORY_SCENERY_GROUP);
+                        research_insert_scenery_group_entry(entryIndex, true);
                     }
                 }
             }
         }
+    }
+    if (_numSelectedObjectsForType[EnumValue(ObjectType::Water)] == 0)
+    {
+        // Reloads the default cyan water palette if no palette was selected.
+        load_palette();
     }
 }
 
@@ -1305,7 +1399,7 @@ static void window_editor_object_selection_update(rct_window* w)
     if (gCurrentTextBox.window.classification == w->classification && gCurrentTextBox.window.number == w->number)
     {
         window_update_textbox_caret();
-        widget_invalidate(w, WIDX_FILTER_STRING_BUTTON);
+        widget_invalidate(w, WIDX_FILTER_TEXT_BOX);
     }
 
     for (rct_widgetindex i = WIDX_FILTER_RIDE_TAB_TRANSPORT; i <= WIDX_FILTER_RIDE_TAB_STALL; i++)
@@ -1324,7 +1418,7 @@ static void window_editor_object_selection_update(rct_window* w)
 
 static void window_editor_object_selection_textinput(rct_window* w, rct_widgetindex widgetIndex, char* text)
 {
-    if (widgetIndex != WIDX_FILTER_STRING_BUTTON || text == nullptr)
+    if (widgetIndex != WIDX_FILTER_TEXT_BOX || text == nullptr)
         return;
 
     if (strcmp(_filter_string, text) == 0)
@@ -1337,7 +1431,7 @@ static void window_editor_object_selection_textinput(rct_window* w, rct_widgetin
     w->scrolls->v_top = 0;
 
     visible_list_refresh(w);
-    window_invalidate(w);
+    w->Invalidate();
 }
 
 static bool filter_selected(uint8_t objectFlag)
@@ -1385,40 +1479,40 @@ static bool filter_string(const ObjectRepositoryItem* item)
 
     // Make use of lowercase characters only
     for (int32_t i = 0; name_lower[i] != '\0'; i++)
-        name_lower[i] = (char)tolower(name_lower[i]);
+        name_lower[i] = static_cast<char>(tolower(name_lower[i]));
     for (int32_t i = 0; type_lower[i] != '\0'; i++)
-        type_lower[i] = (char)tolower(type_lower[i]);
+        type_lower[i] = static_cast<char>(tolower(type_lower[i]));
     for (int32_t i = 0; object_path[i] != '\0'; i++)
-        object_path[i] = (char)tolower(object_path[i]);
+        object_path[i] = static_cast<char>(tolower(object_path[i]));
     for (int32_t i = 0; filter_lower[i] != '\0'; i++)
-        filter_lower[i] = (char)tolower(filter_lower[i]);
+        filter_lower[i] = static_cast<char>(tolower(filter_lower[i]));
 
     // Check if the searched string exists in the name, ride type, or filename
     bool inName = strstr(name_lower, filter_lower) != nullptr;
-    bool inRideType = ((item->ObjectEntry.flags & 0x0F) == OBJECT_TYPE_RIDE) && strstr(type_lower, filter_lower) != nullptr;
+    bool inRideType = (item->ObjectEntry.GetType() == ObjectType::Ride) && strstr(type_lower, filter_lower) != nullptr;
     bool inPath = strstr(object_path, filter_lower) != nullptr;
 
     return inName || inRideType || inPath;
 }
 
-static bool sources_match(uint8_t source)
+static bool sources_match(ObjectSourceGame source)
 {
     // clang-format off
-    return (_FILTER_RCT1 && source == OBJECT_SOURCE_RCT1) ||
-           (_FILTER_AA && source == OBJECT_SOURCE_ADDED_ATTRACTIONS) ||
-           (_FILTER_LL && source == OBJECT_SOURCE_LOOPY_LANDSCAPES) ||
-           (_FILTER_RCT2 && source == OBJECT_SOURCE_RCT2) ||
-           (_FILTER_WW && source == OBJECT_SOURCE_WACKY_WORLDS) ||
-           (_FILTER_TT && source == OBJECT_SOURCE_TIME_TWISTER) ||
-           (_FILTER_OO && source == OBJECT_SOURCE_OPENRCT2_OFFICIAL) ||
+    return (_FILTER_RCT1 && source == ObjectSourceGame::RCT1) ||
+           (_FILTER_AA && source == ObjectSourceGame::AddedAttractions) ||
+           (_FILTER_LL && source == ObjectSourceGame::LoopyLandscapes) ||
+           (_FILTER_RCT2 && source == ObjectSourceGame::RCT2) ||
+           (_FILTER_WW && source == ObjectSourceGame::WackyWorlds) ||
+           (_FILTER_TT && source == ObjectSourceGame::TimeTwister) ||
+           (_FILTER_OO && source == ObjectSourceGame::OpenRCT2Official) ||
            (_FILTER_CUSTOM &&
-            source != OBJECT_SOURCE_RCT1 &&
-            source != OBJECT_SOURCE_ADDED_ATTRACTIONS &&
-            source != OBJECT_SOURCE_LOOPY_LANDSCAPES &&
-            source != OBJECT_SOURCE_RCT2 &&
-            source != OBJECT_SOURCE_WACKY_WORLDS &&
-            source != OBJECT_SOURCE_TIME_TWISTER &&
-            source != OBJECT_SOURCE_OPENRCT2_OFFICIAL);
+            source != ObjectSourceGame::RCT1 &&
+            source != ObjectSourceGame::AddedAttractions &&
+            source != ObjectSourceGame::LoopyLandscapes &&
+            source != ObjectSourceGame::RCT2 &&
+            source != ObjectSourceGame::WackyWorlds &&
+            source != ObjectSourceGame::TimeTwister &&
+            source != ObjectSourceGame::OpenRCT2Official);
     // clang-format on
 }
 
@@ -1438,23 +1532,18 @@ static bool filter_source(const ObjectRepositoryItem* item)
 
 static bool filter_chunks(const ObjectRepositoryItem* item)
 {
-    switch (item->ObjectEntry.flags & 0x0F)
+    if (item->ObjectEntry.GetType() == ObjectType::Ride)
     {
-        case OBJECT_TYPE_RIDE:
-
-            uint8_t rideType = 0;
-            for (int32_t i = 0; i < MAX_RIDE_TYPES_PER_RIDE_ENTRY; i++)
+        uint8_t rideType = 0;
+        for (int32_t i = 0; i < MAX_RIDE_TYPES_PER_RIDE_ENTRY; i++)
+        {
+            if (item->RideInfo.RideType[i] != RIDE_TYPE_NULL)
             {
-                if (item->RideInfo.RideType[i] != RIDE_TYPE_NULL)
-                {
-                    rideType = item->RideInfo.RideType[i];
-                    break;
-                }
+                rideType = item->RideInfo.RideType[i];
+                break;
             }
-            if (_filter_flags & (1 << (gRideCategories[rideType] + _numSourceGameItems)))
-                return true;
-
-            return false;
+        }
+        return (_filter_flags & (1 << (GetRideTypeDescriptor(rideType).Category + _numSourceGameItems))) != 0;
     }
     return true;
 }
@@ -1464,10 +1553,7 @@ static void filter_update_counts()
     if (!_FILTER_ALL || strlen(_filter_string) > 0)
     {
         const auto& selectionFlags = _objectSelectionFlags;
-        for (int32_t i = 0; i < 11; i++)
-        {
-            _filter_object_counts[i] = 0;
-        }
+        std::fill(std::begin(_filter_object_counts), std::end(_filter_object_counts), 0);
 
         size_t numObjects = object_repository_get_items_count();
         const ObjectRepositoryItem* items = object_repository_get_items();
@@ -1476,8 +1562,8 @@ static void filter_update_counts()
             const ObjectRepositoryItem* item = &items[i];
             if (filter_source(item) && filter_string(item) && filter_chunks(item) && filter_selected(selectionFlags[i]))
             {
-                uint8_t objectType = item->ObjectEntry.flags & 0xF;
-                _filter_object_counts[objectType]++;
+                ObjectType objectType = item->ObjectEntry.GetType();
+                _filter_object_counts[EnumValue(objectType)]++;
             }
         }
     }
@@ -1491,30 +1577,20 @@ static rct_string_id get_ride_type_string_id(const ObjectRepositoryItem* item)
         uint8_t rideType = item->RideInfo.RideType[i];
         if (rideType != RIDE_TYPE_NULL)
         {
-            if (RideGroupManager::RideTypeHasRideGroups(rideType))
-            {
-                const RideGroup* rideGroup = RideGroupManager::RideGroupFind(rideType, item->RideInfo.RideGroupIndex);
-                result = rideGroup->Naming.name;
-            }
-            else
-            {
-                result = RideNaming[rideType].name;
-            }
-
+            result = GetRideTypeDescriptor(rideType).Naming.Name;
             break;
         }
     }
     return result;
 }
 
-static std::string object_get_description(const void* object)
+static std::string object_get_description(const Object* object)
 {
-    const Object* baseObject = static_cast<const Object*>(object);
-    switch (baseObject->GetObjectType())
+    switch (object->GetObjectType())
     {
-        case OBJECT_TYPE_RIDE:
+        case ObjectType::Ride:
         {
-            const RideObject* rideObject = static_cast<const RideObject*>(baseObject);
+            const RideObject* rideObject = static_cast<const RideObject*>(object);
             return rideObject->GetDescription();
         }
         default:
@@ -1522,7 +1598,11 @@ static std::string object_get_description(const void* object)
     }
 }
 
-static int32_t get_selected_object_type(rct_window* w)
+static ObjectType get_selected_object_type(rct_window* w)
 {
-    return w->selected_tab;
+    auto tab = w->selected_tab;
+    if (tab >= EnumValue(ObjectType::ScenarioText))
+        return static_cast<ObjectType>(tab + 1);
+    else
+        return static_cast<ObjectType>(tab);
 }
